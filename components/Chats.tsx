@@ -62,13 +62,13 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
       for (const p of data ?? []) m[p.id] = { name: p.display_name, avatar: p.avatar };
       setPeople(m);
     });
-    supabase.from("member").select("id, person_id, active").then(({ data }) =>
+    supabase.from("member").select("id, person_id, active").eq("business_id", ctx.business_id).then(({ data }) =>
       setMembers((data ?? []).filter((m) => m.active).map((m) => ({ member_id: m.id, person_id: m.person_id }))));
     const sub = supabase.channel("list")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "message" }, () => loadList())
       .subscribe();
     return () => { supabase.removeChannel(sub); };
-  }, [loadList]);
+  }, [loadList, ctx.business_id]);
 
   const go = (s: Screen) => { setScreen(s); onFull(s.s !== "list"); if (s.s === "list") loadList(); };
   const cur = screen.s === "convo" || screen.s === "info" ? items.find((i) => i.channel_id === screen.id) : undefined;

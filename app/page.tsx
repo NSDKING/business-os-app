@@ -3,12 +3,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase, type Channel, type Draft, type Message } from "@/lib/supabase";
 import { enqueue, flushQueue, readQueue } from "@/lib/queue";
 import ReviewCard from "@/components/ReviewCard";
+import Business from "@/components/Business";
 import Chats from "@/components/Chats";
 import Avatar from "@/components/Avatar";
 import { toAvatar } from "@/lib/image";
 
 type Tab = "chat" | "reports" | "business" | "settings";
-type Ctx = { business_id: string; business: string; person_id: string; name: string };
+type Ctx = { business_id: string; business: string; person_id: string; name: string; others?: { business_id: string; business: string }[] };
 
 export default function Home() {
   const [ctx, setCtx] = useState<Ctx | null | undefined>(undefined);
@@ -22,14 +23,16 @@ export default function Home() {
     (async () => {
       const { data: s } = await supabase.auth.getSession();
       if (!s.session) return setCtx(null);
-      const { data: m } = await supabase.from("member").select("business_id, person_id").eq("auth_user_id", s.session.user.id).limit(1);
-      if (!m?.length) return setCtx(null);
-      const [{ data: b }, { data: p }] = await Promise.all([
-        supabase.from("business").select("name").eq("id", m[0].business_id).single(),
-        supabase.from("person").select("display_name").eq("id", m[0].person_id).single(),
-      ]);
-      setCtx({ business_id: m[0].business_id, person_id: m[0].person_id, business: b?.name ?? "", name: p?.display_name ?? "" });
-      const { data: me } = await supabase.from("member").select("id").eq("person_id", m[0].person_id).limit(1);
+      const { data: ms } = await supabase.from("member").select("business_id, person_id").eq("auth_user_id", s.session.user.id);
+      if (!ms?.length) return setCtx(null);
+      const { data: bs } = await supabase.from("business").select("id, name").in("id", ms.map((x) => x.business_id));
+      const names = new Map((bs ?? []).map((x) => [x.id, x.name]));
+      let saved = ""; try { saved = localStorage.getItem("bos.business") ?? ""; } catch {}
+      const m = ms.find((x) => x.business_id === saved) ?? ms[0];
+      const { data: p } = await supabase.from("person").select("display_name").eq("id", m.person_id).single();
+      setCtx({ business_id: m.business_id, person_id: m.person_id, business: names.get(m.business_id) ?? "", name: p?.display_name ?? "",
+        others: ms.map((x) => ({ business_id: x.business_id, business: names.get(x.business_id) ?? "" })) });
+      const { data: me } = await supabase.from("member").select("id").eq("business_id", m.business_id).eq("person_id", m.person_id).limit(1);
       if (me?.length) {
         const { data: g } = await supabase.from("role_grant").select("id").eq("member_id", me[0].id).eq("permission", "appoint").is("revoked_at", null).limit(1);
         setIsAdmin(!!g?.length);
@@ -56,8 +59,8 @@ export default function Home() {
       {!(tab === "chat" && full) && tab !== "chat" && <div className="top"><span>{ctx.business}</span><span className="muted">{ctx.name}</span></div>}
       {!online && <div className="offline">Hors ligne · vos messages partiront dès le retour du réseau{pendingN ? ` (${pendingN})` : ""}</div>}
       {tab === "chat" && <Chats ctx={ctx} online={online} isAdmin={isAdmin} onQueue={() => setPendingN(readQueue().length)} onFull={setFull} />}
-      {tab === "reports" && <Reports />}
-      {tab === "business" && <div className="body"><div className="card"><h3>Business</h3><p className="muted">Les chiffres approuvés apparaîtront ici (tableau de bord, étape suivante).</p></div></div>}
+      {tab === "reports" && <Reports ctx={ctx} />}
+      {tab === "business" && <Business ctx={ctx} />}
       {tab === "settings" && <Settings ctx={ctx} />}
       {!(tab === "chat" && full) && <div className="tabs">
         {(["chat", "reports", "business", "settings"] as Tab[]).map((t) => (
@@ -69,11 +72,11 @@ export default function Home() {
   );
 }
 
-function Reports() {
+function Reports({ ctx }: { ctx: Ctx }) {
   const [drafts, setDrafts] = useState<(Draft & { rt?: string; src?: string; ev?: string })[]>([]);
   const [loaded, setLoaded] = useState(false);
   const load = useCallback(async () => {
-    const { data: ds } = await supabase.from("draft").select("*").eq("status", "proposed").order("created_at", { ascending: false });
+    const { data: ds } = await supabase.from("draft").select("*").eq("business_id", ctx.business_id).eq("status", "proposed").order("created_at", { ascending: false });
     const out = [];
     for (const d of ds ?? []) {
       const [{ data: rt }, { data: s }] = await Promise.all([
@@ -88,7 +91,7 @@ function Reports() {
       out.push({ ...d, rt: rt?.label, src, ev });
     }
     setDrafts(out); setLoaded(true);
-  }, []);
+  }, [ctx.business_id]);
   useEffect(() => { load(); }, [load]);
   return (<div className="body">
     {loaded && drafts.length === 0 && <div className="card"><span className="pill ok">Tout est à jour</span><p className="muted">Aucun rapport à approuver.</p></div>}
@@ -106,11 +109,11 @@ function Settings({ ctx }: { ctx: Ctx }) {
 
   const loadTeam = useCallback(async () => {
     const [{ data: ms }, { data: ps }, { data: cm }, { data: cs }, { data: me2 }] = await Promise.all([
-      supabase.from("member").select("id, person_id, active"),
+      supabase.from("member").select("id, person_id, active").eq("business_id", ctx.business_id),
       supabase.from("person").select("id, display_name, avatar"),
-      supabase.from("channel_member").select("channel_id, member_id"),
-      supabase.from("channel").select("*").order("name"),
-      supabase.from("member").select("id").eq("person_id", ctx.person_id).limit(1),
+      supabase.from("channel_member").select("channel_id, member_id").eq("business_id", ctx.business_id),
+      supabase.from("channel").select("*").eq("business_id", ctx.business_id).order("name"),
+      supabase.from("member").select("id").eq("business_id", ctx.business_id).eq("person_id", ctx.person_id).limit(1),
     ]);
     setChannels(cs ?? []);
     const pm = new Map((ps ?? []).map((p) => [p.id, p]));
@@ -124,7 +127,7 @@ function Settings({ ctx }: { ctx: Ctx }) {
       member_id: m.id, name: pm.get(m.person_id)?.display_name ?? "?", avatar: pm.get(m.person_id)?.avatar ?? null,
       chans: new Set((cm ?? []).filter((c) => c.member_id === m.id).map((c) => c.channel_id)),
     })));
-  }, [ctx.person_id]);
+  }, [ctx.person_id, ctx.business_id]);
   useEffect(() => { loadTeam(); }, [loadTeam]);
 
   async function invite() {
@@ -157,6 +160,12 @@ function Settings({ ctx }: { ctx: Ctx }) {
         </label></div>
       </div>
     </div>
+    {(ctx.others?.length ?? 0) > 1 && <div className="card"><h3>Entreprise</h3>
+      <p className="muted">Passez de votre entreprise réelle à la démonstration.</p>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {ctx.others!.map((o) => <button key={o.business_id} className={o.business_id === ctx.business_id ? "primary" : ""} disabled={o.business_id === ctx.business_id}
+          onClick={() => { try { localStorage.setItem("bos.business", o.business_id); } catch {} location.reload(); }}>{o.business}</button>)}
+      </div></div>}
     {isAdmin && (<>
       <div className="card"><h3>Équipe et accès</h3>
         <p className="muted">Cochez les groupes que chaque personne peut voir et où elle peut écrire. {saved && <b>{saved}</b>}</p>
