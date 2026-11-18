@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase, type Channel, type Draft, type Message } from "@/lib/supabase";
 import { enqueue, flushQueue, readQueue } from "@/lib/queue";
 import ReviewCard from "@/components/ReviewCard";
+import Chats from "@/components/Chats";
 import Avatar from "@/components/Avatar";
 import { toAvatar } from "@/lib/image";
 
@@ -14,6 +15,8 @@ export default function Home() {
   const [tab, setTab] = useState<Tab>("chat");
   const [online, setOnline] = useState(true);
   const [pendingN, setPendingN] = useState(0);
+  const [full, setFull] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -26,6 +29,11 @@ export default function Home() {
         supabase.from("person").select("display_name").eq("id", m[0].person_id).single(),
       ]);
       setCtx({ business_id: m[0].business_id, person_id: m[0].person_id, business: b?.name ?? "", name: p?.display_name ?? "" });
+      const { data: me } = await supabase.from("member").select("id").eq("person_id", m[0].person_id).limit(1);
+      if (me?.length) {
+        const { data: g } = await supabase.from("role_grant").select("id").eq("member_id", me[0].id).eq("permission", "appoint").is("revoked_at", null).limit(1);
+        setIsAdmin(!!g?.length);
+      }
     })();
   }, []);
 
@@ -45,96 +53,20 @@ export default function Home() {
 
   return (
     <div className="shell">
-      <div className="top"><span>{ctx.business}</span><span className="muted">{ctx.name}</span></div>
+      {!(tab === "chat" && full) && tab !== "chat" && <div className="top"><span>{ctx.business}</span><span className="muted">{ctx.name}</span></div>}
       {!online && <div className="offline">Hors ligne · vos messages partiront dès le retour du réseau{pendingN ? ` (${pendingN})` : ""}</div>}
-      {tab === "chat" && <Chat ctx={ctx} online={online} onQueue={() => setPendingN(readQueue().length)} />}
+      {tab === "chat" && <Chats ctx={ctx} online={online} isAdmin={isAdmin} onQueue={() => setPendingN(readQueue().length)} onFull={setFull} />}
       {tab === "reports" && <Reports />}
       {tab === "business" && <div className="body"><div className="card"><h3>Business</h3><p className="muted">Les chiffres approuvés apparaîtront ici (tableau de bord, étape suivante).</p></div></div>}
       {tab === "settings" && <Settings ctx={ctx} />}
-      <div className="tabs">
+      {!(tab === "chat" && full) && <div className="tabs">
         {(["chat", "reports", "business", "settings"] as Tab[]).map((t) => (
           <button key={t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>
             {{ chat: "Chat", reports: "Rapports", business: "Business", settings: "Réglages" }[t]}
           </button>))}
-      </div>
+      </div>}
     </div>
   );
-}
-
-function Chat({ ctx, online, onQueue }: { ctx: Ctx; online: boolean; onQueue: () => void }) {
-  const [channels, setChannels] = useState<Channel[]>([]);
-  const [cur, setCur] = useState<string>("");
-  const [msgs, setMsgs] = useState<Message[]>([]);
-  const [text, setText] = useState("");
-  const [people, setPeople] = useState<Record<string, { name: string; avatar: string | null }>>({});
-  const end = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    supabase.from("person").select("id, display_name, avatar").then(({ data }) => {
-      const m: Record<string, { name: string; avatar: string | null }> = {};
-      for (const p of data ?? []) m[p.id] = { name: p.display_name, avatar: p.avatar };
-      setPeople(m);
-    });
-  }, []);
-
-  useEffect(() => {
-    supabase.from("channel").select("*").order("name").then(({ data }) => {
-      setChannels(data ?? []); if (data?.length) setCur((c) => c || data[0].id);
-    });
-  }, []);
-
-  const load = useCallback(async (ch: string) => {
-    const { data } = await supabase.from("message").select("*").eq("channel_id", ch).order("sent_at").limit(200);
-    setMsgs(data ?? []);
-  }, []);
-
-  useEffect(() => {
-    if (!cur) return;
-    load(cur);
-    const sub = supabase.channel("msg-" + cur)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "message", filter: `channel_id=eq.${cur}` },
-        (p) => setMsgs((m) => (m.some((x) => x.id === (p.new as Message).id) ? m : [...m, p.new as Message])))
-      .subscribe();
-    return () => { supabase.removeChannel(sub); };
-  }, [cur, load]);
-
-  useEffect(() => { end.current?.scrollIntoView(); }, [msgs]);
-
-  async function send() {
-    const t = text.trim(); if (!t || !cur) return;
-    setText("");
-    const p = { id: crypto.randomUUID(), business_id: ctx.business_id, channel_id: cur, person_id: ctx.person_id,
-      sender_label: ctx.name, text: t, sent_at: new Date().toISOString() };
-    setMsgs((m) => [...m, { ...p, kind: "text", attachment: null }]);   // shown at once
-    enqueue(p); onQueue();
-    if (online) { await flushQueue(); onQueue(); }
-  }
-
-  return (<>
-    <div className="body">
-      <div className="chips">{channels.map((c) => (
-        <button key={c.id} className={cur === c.id ? "on" : ""} onClick={() => setCur(c.id)}>{c.name}</button>))}</div>
-      {msgs.length === 0 && <p className="muted">Aucun message. Écrivez le premier.</p>}
-      {msgs.map((m) => {
-        const mine = m.person_id === ctx.person_id; const ai = m.sender_label === "Assistant";
-        const who = (m.person_id && people[m.person_id]) || null;
-        const name = who?.name ?? m.sender_label;
-        return (<div key={m.id} style={{ display: "flex", gap: 8, alignItems: "flex-end", flexDirection: mine ? "row-reverse" : "row" }}>
-          <Avatar name={ai ? "IA" : name} src={who?.avatar} size={32} />
-          <div className={"bubble " + (mine ? "me " : "") + (ai ? "ai" : "")} style={{ margin: "6px 0" }}>
-            <div className="who">{ai ? "Assistant" : name}</div>
-            <div>{m.text}</div>
-            <div className="t">{new Date(m.sent_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</div>
-          </div>
-        </div>);
-      })}
-      <div ref={end} />
-    </div>
-    <div className="composer">
-      <input placeholder="Message" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} />
-      <button className="primary" onClick={send}>Envoyer</button>
-    </div>
-  </>);
 }
 
 function Reports() {
