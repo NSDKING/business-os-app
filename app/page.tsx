@@ -85,14 +85,21 @@ function Reports({ ctx }: { ctx: Ctx }) {
       ]);
       let src = "chat", ev = "";
       if (s?.length) {
-        const { data: m } = await supabase.from("message").select("text, sender_label, sent_at").eq("id", s[0].message_id).single();
-        if (m) { src = `${m.sender_label} · ${new Date(m.sent_at).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}`; ev = m.text; }
+        const { data: m } = await supabase.from("message").select("text, kind, sender_label, sent_at").eq("id", s[0].message_id).single();
+        if (m) { src = `${m.sender_label} · ${new Date(m.sent_at).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}`; ev = m.kind === "image" ? (m.text || "Photo envoyée dans le chat") : m.text; }
       }
       out.push({ ...d, rt: rt?.label, src, ev });
     }
     setDrafts(out); setLoaded(true);
   }, [ctx.business_id]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    // New proposals appear as soon as the AI has read a message.
+    const sub = supabase.channel("drafts-" + ctx.business_id)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "draft", filter: `business_id=eq.${ctx.business_id}` }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(sub); };
+  }, [load, ctx.business_id]);
   return (<div className="body">
     {loaded && drafts.length === 0 && <div className="card"><span className="pill ok">Tout est à jour</span><p className="muted">Aucun rapport à approuver.</p></div>}
     {drafts.map((d) => <ReviewCard key={d.id} d={d} title={d.rt ?? "Rapport"} source={d.src ?? ""} evidence={d.ev ?? ""} onDone={load} />)}

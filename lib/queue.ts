@@ -34,7 +34,11 @@ export async function flushQueue(): Promise<string[]> {
       sent_at: p.sent_at, sender_label: p.sender_label, saved_contact: true, person_id: p.person_id,
       kind, text: p.text, raw: kind === "audio" ? `audio:${p.seconds ?? 0}` : p.text || kind, attachment,
     });
-    if (!error || error.code === "23505") sent.push(p.id); // 23505 = already there
+    if (!error || error.code === "23505") {
+      sent.push(p.id); // 23505 = already there
+      // Ask the AI to read it and propose reports. Fire and forget: a failure never blocks sending.
+      if (!error && (kind === "image" || p.text.trim().length >= 8)) supabase.functions.invoke("extract", { body: { message_id: p.id } }).catch(() => {});
+    }
     else break; // stop at the first failure and keep order
   }
   if (sent.length) writeQueue(readQueue().filter((p) => !sent.includes(p.id)));
