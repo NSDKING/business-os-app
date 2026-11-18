@@ -1,4 +1,5 @@
 "use client";
+import { toPhoto, startRecording, recorderSupported, mediaUrl, MAX_VOICE_SECONDS, type Recording } from "@/lib/media";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase, type Message } from "@/lib/supabase";
 import { enqueue, flushQueue } from "@/lib/queue";
@@ -128,6 +129,23 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
   </>);
 }
 
+function MediaView({ m }: { m: Message }) {
+  const [url, setUrl] = useState<string | null>(null); const [big, setBig] = useState(false); const [fail, setFail] = useState(false);
+  useEffect(() => { let on = true; if (m.attachment) mediaUrl(m.attachment).then((u) => { if (!on) return; if (u) setUrl(u); else setFail(true); }); return () => { on = false; }; }, [m.attachment]);
+  if (!m.attachment) return null;
+  if (fail) return <div className="muted">Fichier indisponible</div>;
+  if (!url) return <div className="muted" style={{ padding: "20px 0" }}>Chargement…</div>;
+  if (m.kind === "audio") return <audio controls preload="none" src={url} style={{ width: 220, maxWidth: "100%" }} />;
+  return (<>
+    {/* eslint-disable-next-line @next/next/no-img-element */}
+    <img src={url} alt="Photo" onClick={() => setBig(true)} style={{ display: "block", maxWidth: "100%", maxHeight: 280, borderRadius: 8, cursor: "pointer" }} />
+    {big && (/* eslint-disable-next-line @next/next/no-img-element */
+      <div onClick={() => setBig(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.92)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <img src={url} alt="Photo" style={{ maxWidth: "100%", maxHeight: "100%" }} />
+      </div>)}
+  </>);
+}
+
 function Convo({ ctx, item, people, online, onQueue, onBack, onInfo }: {
   ctx: Ctx; item: Item; people: Record<string, Person>; online: boolean; onQueue: () => void; onBack: () => void; onInfo: () => void;
 }) {
@@ -135,6 +153,9 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo }: {
   const [text, setText] = useState("");
   const end = useRef<HTMLDivElement>(null);
   const id = item.channel_id;
+  const rec = useRef<Recording | null>(null);
+  const [recording, setRecording] = useState<number | null>(null); // seconds so far, null = not recording
+  const [note, setNote] = useState("");
 
   useEffect(() => {
     supabase.from("message").select("*").eq("channel_id", id).order("sent_at").limit(300).then(({ data }) => { setMsgs(data ?? []); supabase.rpc("mark_read", { p_channel: id }); });
@@ -154,6 +175,34 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo }: {
     if (online) { await flushQueue(); onQueue(); }
   }
 
+  async function sendMedia(kind: "image" | "audio", media: string, seconds?: number) {
+    const p = { id: crypto.randomUUID(), business_id: ctx.business_id, channel_id: id, person_id: ctx.person_id, sender_label: ctx.name, text: "", sent_at: new Date().toISOString(), kind, media, seconds };
+    setMsgs((m) => [...m, { ...p, kind, attachment: media, text: "" }]);
+    enqueue(p); onQueue();
+    if (online) { await flushQueue(); onQueue(); }
+  }
+  async function pickPhoto(f: File | undefined) {
+    if (!f) return; setNote("");
+    try { await sendMedia("image", await toPhoto(f)); } catch { setNote("Impossible de lire cette photo."); }
+  }
+  async function startVoice() {
+    setNote("");
+    try { rec.current = await startRecording(); } catch { return setNote("Autorisez le micro dans votre navigateur pour envoyer un message vocal."); }
+    setRecording(0);
+  }
+  async function finishVoice(send: boolean) {
+    const r = rec.current; rec.current = null; setRecording(null); if (!r) return;
+    if (!send) return r.cancel();
+    const out = await r.stop(); if (out) await sendMedia("audio", out.dataUrl, out.seconds);
+  }
+  useEffect(() => {
+    if (recording === null) return;
+    if (recording >= MAX_VOICE_SECONDS) { finishVoice(true); return; }
+    const t = setTimeout(() => setRecording((x) => (x === null ? x : x + 1)), 1000);
+    return () => clearTimeout(t);
+  }, [recording]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => { rec.current?.cancel(); }, []);
+
   const name = title(item);
   return (<>
     <div className="top" style={{ justifyContent: "flex-start", gap: 10 }}>
@@ -171,16 +220,30 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo }: {
         return (<div key={m.id} style={{ display: "flex", gap: 8, alignItems: "flex-end", flexDirection: mine ? "row-reverse" : "row" }}>
           <Avatar name={ai ? "IA" : n} src={who?.avatar} size={32} />
           <div className={"bubble " + (mine ? "me " : "") + (ai ? "ai" : "")} style={{ margin: "6px 0" }}>
-            <div className="who">{ai ? "Assistant" : n}</div><div>{m.text}</div>
+            <div className="who">{ai ? "Assistant" : n}</div>{(m.kind === "image" || m.kind === "audio") ? <MediaView m={m} /> : <div>{m.text}</div>}
             <div className="t">{new Date(m.sent_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</div>
           </div></div>);
       })}
       <div ref={end} />
     </div>
-    <div className="composer">
-      <input placeholder="Message" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} />
-      <button className="primary" onClick={send}>Envoyer</button>
-    </div>
+    {note && <div className="muted" style={{ padding: "6px 16px", background: "#fff", color: "var(--error)" }}>{note}</div>}
+    {recording !== null ? (
+      <div className="composer" style={{ alignItems: "center" }}>
+        <button onClick={() => finishVoice(false)} aria-label="Annuler" style={{ minWidth: 48 }}>✕</button>
+        <div style={{ flex: 1, textAlign: "center", fontWeight: 600 }}><span style={{ color: "var(--error)" }}>●</span> {Math.floor(recording / 60)}:{String(recording % 60).padStart(2, "0")}</div>
+        <button className="primary" onClick={() => finishVoice(true)}>Envoyer</button>
+      </div>
+    ) : (
+      <div className="composer" style={{ alignItems: "center" }}>
+        <label aria-label="Envoyer une photo" style={{ fontSize: 24, minWidth: 44, minHeight: 44, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>📷
+          <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { pickPhoto(e.target.files?.[0]); e.target.value = ""; }} />
+        </label>
+        <input placeholder="Message" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} />
+        {text.trim() || !recorderSupported()
+          ? <button className="primary" onClick={send}>Envoyer</button>
+          : <button className="primary" onClick={startVoice} aria-label="Message vocal">🎤</button>}
+      </div>
+    )}
   </>);
 }
 
