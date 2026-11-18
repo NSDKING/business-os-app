@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase, type Channel, type Draft, type Message } from "@/lib/supabase";
 import { enqueue, flushQueue, readQueue } from "@/lib/queue";
 import ReviewCard from "@/components/ReviewCard";
+import Avatar from "@/components/Avatar";
+import { toAvatar } from "@/lib/image";
 
 type Tab = "chat" | "reports" | "business" | "settings";
 type Ctx = { business_id: string; business: string; person_id: string; name: string };
@@ -64,7 +66,16 @@ function Chat({ ctx, online, onQueue }: { ctx: Ctx; online: boolean; onQueue: ()
   const [cur, setCur] = useState<string>("");
   const [msgs, setMsgs] = useState<Message[]>([]);
   const [text, setText] = useState("");
+  const [people, setPeople] = useState<Record<string, { name: string; avatar: string | null }>>({});
   const end = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    supabase.from("person").select("id, display_name, avatar").then(({ data }) => {
+      const m: Record<string, { name: string; avatar: string | null }> = {};
+      for (const p of data ?? []) m[p.id] = { name: p.display_name, avatar: p.avatar };
+      setPeople(m);
+    });
+  }, []);
 
   useEffect(() => {
     supabase.from("channel").select("*").order("name").then(({ data }) => {
@@ -106,10 +117,15 @@ function Chat({ ctx, online, onQueue }: { ctx: Ctx; online: boolean; onQueue: ()
       {msgs.length === 0 && <p className="muted">Aucun message. Écrivez le premier.</p>}
       {msgs.map((m) => {
         const mine = m.person_id === ctx.person_id; const ai = m.sender_label === "Assistant";
-        return (<div key={m.id} className={"bubble " + (mine ? "me " : "") + (ai ? "ai" : "")}>
-          {!mine && <div className="who">{m.sender_label}</div>}
-          <div>{m.text}</div>
-          <div className="t">{new Date(m.sent_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</div>
+        const who = (m.person_id && people[m.person_id]) || null;
+        const name = who?.name ?? m.sender_label;
+        return (<div key={m.id} style={{ display: "flex", gap: 8, alignItems: "flex-end", flexDirection: mine ? "row-reverse" : "row" }}>
+          <Avatar name={ai ? "IA" : name} src={who?.avatar} size={32} />
+          <div className={"bubble " + (mine ? "me " : "") + (ai ? "ai" : "")} style={{ margin: "6px 0" }}>
+            <div className="who">{ai ? "Assistant" : name}</div>
+            <div>{m.text}</div>
+            <div className="t">{new Date(m.sent_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</div>
+          </div>
         </div>);
       })}
       <div ref={end} />
@@ -150,18 +166,86 @@ function Reports() {
 
 function Settings({ ctx }: { ctx: Ctx }) {
   const [name, setName] = useState(""); const [link, setLink] = useState(""); const [err, setErr] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [me, setMe] = useState<{ avatar: string | null }>({ avatar: null });
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [team, setTeam] = useState<{ member_id: string; name: string; avatar: string | null; chans: Set<string> }[]>([]);
+  const [saved, setSaved] = useState("");
+
+  const loadTeam = useCallback(async () => {
+    const [{ data: ms }, { data: ps }, { data: cm }, { data: cs }, { data: me2 }] = await Promise.all([
+      supabase.from("member").select("id, person_id, active"),
+      supabase.from("person").select("id, display_name, avatar"),
+      supabase.from("channel_member").select("channel_id, member_id"),
+      supabase.from("channel").select("*").order("name"),
+      supabase.from("member").select("id").eq("person_id", ctx.person_id).limit(1),
+    ]);
+    setChannels(cs ?? []);
+    const pm = new Map((ps ?? []).map((p) => [p.id, p]));
+    setMe({ avatar: pm.get(ctx.person_id)?.avatar ?? null });
+    const myMember = me2?.[0]?.id;
+    if (myMember) {
+      const { data: g } = await supabase.from("role_grant").select("id").eq("member_id", myMember).eq("permission", "appoint").is("revoked_at", null).limit(1);
+      setIsAdmin(!!g?.length);
+    }
+    setTeam((ms ?? []).filter((m) => m.active).map((m) => ({
+      member_id: m.id, name: pm.get(m.person_id)?.display_name ?? "?", avatar: pm.get(m.person_id)?.avatar ?? null,
+      chans: new Set((cm ?? []).filter((c) => c.member_id === m.id).map((c) => c.channel_id)),
+    })));
+  }, [ctx.person_id]);
+  useEffect(() => { loadTeam(); }, [loadTeam]);
+
   async function invite() {
     setErr(""); setLink("");
     const { data, error } = await supabase.rpc("create_invite", { p_business: ctx.business_id, p_name: name });
-    if (error) return setErr("Vous n'avez pas le droit d'inviter."); setLink(`${location.origin}/join/${data}`); setName("");
+    if (error) return setErr("Vous n'avez pas le droit d'inviter.");
+    setLink(`${location.origin}/join/${data}`); setName(""); loadTeam();
   }
+  async function toggle(member_id: string, chan: string, on: boolean) {
+    const row = team.find((t) => t.member_id === member_id)!;
+    const next = new Set(row.chans); if (on) next.add(chan); else next.delete(chan);
+    setTeam((tm) => tm.map((t) => (t.member_id === member_id ? { ...t, chans: next } : t)));
+    const { error } = await supabase.rpc("set_channel_access", { p_member: member_id, p_channels: [...next] });
+    setSaved(error ? "Échec de l'enregistrement" : "Enregistré"); if (error) loadTeam();
+  }
+  async function pickPhoto(f: File | undefined) {
+    if (!f) return;
+    const data = await toAvatar(f);
+    const { error } = await supabase.rpc("set_my_avatar", { p_business: ctx.business_id, p_avatar: data });
+    if (!error) setMe({ avatar: data });
+  }
+
   return (<div className="body">
-    <div className="card"><h3>Inviter quelqu'un</h3>
-      <p><input placeholder="Nom de la personne" value={name} onChange={(e) => setName(e.target.value)} /></p>
-      <button className="primary big" disabled={!name.trim()} onClick={invite}>Créer le lien</button>
-      {err && <p style={{ color: "var(--error)" }}>{err}</p>}
-      {link && <p className="muted" style={{ wordBreak: "break-all" }}>Envoyez ce lien par WhatsApp (valable 7 jours, une seule fois) :<br /><b>{link}</b></p>}
+    <div className="card" style={{ display: "flex", gap: 14, alignItems: "center" }}>
+      <Avatar name={ctx.name} src={me.avatar} size={64} />
+      <div style={{ flex: 1 }}>
+        <b>{ctx.name}</b>
+        <div><label className="muted" style={{ textDecoration: "underline", cursor: "pointer" }}>
+          Changer ma photo<input type="file" accept="image/*" hidden onChange={(e) => pickPhoto(e.target.files?.[0])} />
+        </label></div>
+      </div>
     </div>
+    {isAdmin && (<>
+      <div className="card"><h3>Équipe et accès</h3>
+        <p className="muted">Cochez les groupes que chaque personne peut voir et où elle peut écrire. {saved && <b>{saved}</b>}</p>
+        {team.map((t) => (
+          <div key={t.member_id} style={{ padding: "10px 0", borderTop: "1px solid var(--line)" }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}><Avatar name={t.name} src={t.avatar} size={36} /><b>{t.name}</b></div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+              {channels.map((c) => (
+                <label key={c.id} className={"chips"} style={{ display: "inline-flex", gap: 6, alignItems: "center", minHeight: 40 }}>
+                  <input type="checkbox" style={{ width: 22, minHeight: 22 }} checked={t.chans.has(c.id)} onChange={(e) => toggle(t.member_id, c.id, e.target.checked)} />{c.name}
+                </label>))}
+            </div>
+          </div>))}
+      </div>
+      <div className="card"><h3>Inviter quelqu'un</h3>
+        <p><input placeholder="Nom de la personne" value={name} onChange={(e) => setName(e.target.value)} /></p>
+        <button className="primary big" disabled={!name.trim()} onClick={invite}>Créer le lien</button>
+        {err && <p style={{ color: "var(--error)" }}>{err}</p>}
+        {link && <p className="muted" style={{ wordBreak: "break-all" }}>Envoyez ce lien par WhatsApp (valable 7 jours, une seule fois). La personne ne verra aucun groupe tant que vous ne les avez pas cochés ci-dessus :<br /><b>{link}</b></p>}
+      </div>
+    </>)}
     <button className="big" onClick={async () => { await supabase.auth.signOut(); location.reload(); }}>Se déconnecter</button>
   </div>);
 }
