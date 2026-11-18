@@ -9,7 +9,7 @@ const LABELS: Record<string, string> = {
   date: "Date", sorties_trays: "Sorties (alvéoles)", total_eggs_written: "Total œufs écrit",
   customer: "Client", vehicle: "Véhicule",
   size: "Taille", opening: "Début", production: "Prod.", sorties: "Sorties",
-  closing_book: "Fin (livre)", closing_physical: "Fin (réel)", gap: "Écart",
+  closing_book: "Fin livre", closing_physical: "Fin réel", gap: "Écart",
   room: "Salle", eggs_8h: "8h", eggs_10h: "10h", eggs_12h: "12h", eggs_15h: "15h", eggs_total: "Total",
   quantity: "Qté", item: "Article",
 };
@@ -30,21 +30,22 @@ function flags(rows: Row[]): Set<string> {
 function Table({ rows, editing, bad, field, onCell }: {
   rows: Row[]; editing: boolean; bad: Set<string>; field: string; onCell: (i: number, k: string, v: string) => void;
 }) {
-  const cols = useMemo(() => [...new Set(rows.flatMap((r) => Object.keys(r)))], [rows]);
+  const ORDER = ["size", "room", "customer", "vehicle", "item", "opening", "production", "sorties", "closing_book", "closing_physical", "gap"];
+  const cols = useMemo(() => [...new Set(rows.flatMap((r) => Object.keys(r)))].sort((a, b) => (ORDER.indexOf(a) + 1 || 99) - (ORDER.indexOf(b) + 1 || 99)), [rows]);
   return (
-    <div style={{ overflowX: "auto", margin: "6px -4px 0" }}>
-      <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 14 }}>
+    <div style={{ overflowX: "auto", margin: "6px -8px 0" }}>
+      <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
         <thead><tr>{cols.map((c) => (
-          <th key={c} style={{ textAlign: c === "size" || c === "room" ? "left" : "right", padding: "6px 8px", color: "var(--muted)", fontWeight: 600, whiteSpace: "nowrap" }}>{label(c)}</th>))}</tr></thead>
+          <th key={c} style={{ textAlign: c === "size" || c === "room" ? "left" : "right", padding: "6px 4px", color: "var(--muted)", fontWeight: 600, fontSize: 12, lineHeight: 1.2, verticalAlign: "bottom" }}>{label(c)}</th>))}</tr></thead>
         <tbody>{rows.map((r, i) => (
           <tr key={i} style={{ borderTop: "1px solid var(--line)" }}>{cols.map((c) => {
             const isBad = field === "stock" && bad.has(`${i}.${c}`);
             const textual = c === "size" || c === "room" || typeof r[c] === "string";
             return (
-              <td key={c} style={{ padding: "6px 8px", textAlign: textual ? "left" : "right", background: isBad ? "#FCEFD6" : undefined, fontWeight: textual ? 700 : 500, whiteSpace: "nowrap" }}>
+              <td key={c} style={{ padding: "6px 4px", textAlign: textual ? "left" : "right", background: isBad ? "#FCEFD6" : undefined, fontWeight: textual ? 700 : 500, whiteSpace: "nowrap" }}>
                 {editing && !textual
                   ? <input inputMode="numeric" value={String(r[c] ?? "")} onChange={(e) => onCell(i, c, e.target.value)}
-                      style={{ width: 74, minHeight: 40, padding: "4px 6px", textAlign: "right", borderColor: isBad ? "var(--pending)" : undefined }} />
+                      style={{ width: 54, minHeight: 40, padding: "4px 4px", fontSize: 14, textAlign: "right", borderColor: isBad ? "var(--pending)" : undefined }} />
                   : String(r[c] ?? "—")}
               </td>);
           })}</tr>))}
@@ -64,7 +65,7 @@ export default function ReviewCard({ d, title, source, evidence, onDone }: {
   const stock = Array.isArray(f.stock) ? (f.stock as Row[]) : [];
   const bad = useMemo(() => flags(stock), [stock]);
   const pct = d.confidence == null ? null : Math.round(d.confidence * 100);
-  const level = pct == null ? "" : pct >= 90 ? "High" : pct >= 70 ? "Medium" : "Low";
+  const level = pct == null ? "" : pct >= 90 ? "élevée" : pct >= 70 ? "moyenne" : "faible";
 
   function setScalar(k: string, v: string) { setF((x) => ({ ...x, [k]: typeof d.fields[k] === "number" ? num(v) : v })); }
   function setCell(key: string, i: number, k: string, v: string) {
@@ -89,9 +90,9 @@ export default function ReviewCard({ d, title, source, evidence, onDone }: {
 
   return (
     <div className="card">
-      <span className="pill pending">{editing ? "Editing" : "Needs approval"}</span>
+      <span className="pill pending">{editing ? "Modification" : "À valider"}</span>
       <h3>{title}</h3>
-      <div className="muted">Extracted from {source}</div>
+      <div className="muted">Extrait de {source}</div>
 
       <div style={{ marginTop: 8 }}>
         {scalars.map(([k, v]) => (
@@ -109,20 +110,20 @@ export default function ReviewCard({ d, title, source, evidence, onDone }: {
           <Table rows={rows} editing={editing} bad={bad} field={k} onCell={(i, c, v) => setCell(k, i, c, v)} />
         </div>))}
 
-      {bad.size > 0 && <div className="quote">Les cases en orange ne tombent pas juste : <b>début + production − sorties = fin (livre)</b> et <b>écart = fin (réel) − fin (livre)</b>. {editing ? "Corrigez-les." : "Touchez Edit pour corriger."}</div>}
+      {bad.size > 0 && <div className="quote">Les cases en orange ne tombent pas juste : <b>début + production − sorties = fin (livre)</b> et <b>écart = fin (réel) − fin (livre)</b>. {editing ? "Corrigez-les." : "Touchez Modifier pour corriger."}</div>}
       {d.questions.length > 0 && <div className="quote">À vérifier : {d.questions.join(" · ")}</div>}
 
-      <div className="muted" style={{ marginTop: 10 }}>Original evidence</div>
+      <div className="muted" style={{ marginTop: 10 }}>Message d'origine</div>
       <div className="quote">“{evidence}”</div>
-      {pct != null && <div className="muted">AI confidence: {level} ({pct}%) · Verify before approving</div>}
+      {pct != null && <div className="muted">Confiance de l'IA : {level} ({pct}%) · Vérifiez avant d'approuver</div>}
       {err && <p style={{ color: "var(--error)" }}>{err}</p>}
 
-      <p><button className="primary big" disabled={busy} onClick={approve}>{editing && changed ? "Approve with my changes" : "Approve report"}</button></p>
+      <p><button className="primary big" disabled={busy} onClick={approve}>{editing && changed ? "Approuver avec mes corrections" : "Approuver le rapport"}</button></p>
       <div className="row">
         {editing
-          ? <button disabled={busy} onClick={() => { setF(structuredClone(d.fields)); setEditing(false); }}>Cancel</button>
-          : <button disabled={busy} onClick={() => setEditing(true)}>Edit</button>}
-        <button disabled={busy} onClick={reject}>Reject</button>
+          ? <button disabled={busy} onClick={() => { setF(structuredClone(d.fields)); setEditing(false); }}>Annuler</button>
+          : <button disabled={busy} onClick={() => setEditing(true)}>Modifier</button>}
+        <button disabled={busy} onClick={reject}>Rejeter</button>
       </div>
     </div>
   );
