@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase, type Message } from "@/lib/supabase";
 import { enqueue, flushQueue } from "@/lib/queue";
 import Avatar from "./Avatar";
+import Icon from "./Icon";
 
 export type Ctx = { business_id: string; business: string; person_id: string; name: string };
 type Item = {
@@ -18,7 +19,7 @@ const norm = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").t
 function SearchBox({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
   return (
     <div style={{ padding: "10px 16px", background: "#fff", borderBottom: "1px solid var(--line)", position: "relative" }}>
-      <span aria-hidden style={{ position: "absolute", left: 28, top: 21, color: "var(--muted)" }}>🔍</span>
+      <span aria-hidden style={{ position: "absolute", left: 28, top: 20, color: "var(--muted)", display: "flex" }}><Icon name="search" size={18} /></span>
       <input type="search" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
         style={{ paddingLeft: 38, borderRadius: 22, background: "var(--bg)" }} />
     </div>);
@@ -34,8 +35,8 @@ function when(iso: string | null) {
 }
 function preview(i: Item) {
   if (!i.last_at) return "Aucun message";
-  const body = i.last_kind === "image" ? "📷 Photo" : i.last_kind === "audio" ? "🎤 Message vocal" : i.last_text ?? "";
-  return i.kind === "group" && i.last_sender ? `${i.last_sender.split(" ")[0]} : ${body}` : body;
+  const body = i.last_kind === "image" ? <><Icon name="camera" size={15} /> Photo</> : i.last_kind === "audio" ? <><Icon name="mic" size={15} /> Message vocal</> : i.last_text ?? "";
+  return i.kind === "group" && i.last_sender ? <>{i.last_sender.split(" ")[0]} : {body}</> : <>{body}</>;
 }
 
 export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
@@ -83,10 +84,10 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
 
   return (<>
     <div className="top"><span>Discussions</span>
-      <button className="primary" style={{ minWidth: 44 }} onClick={() => go({ s: "new" })} aria-label="Nouvelle discussion">＋</button></div>
+      <button className="primary" style={{ minWidth: 44 }} onClick={() => go({ s: "new" })} aria-label="Nouvelle discussion"><Icon name="plus" /></button></div>
     <SearchBox value={q} onChange={setQ} placeholder="Rechercher une personne ou un groupe" />
     <div className="body" style={{ padding: 0 }}>
-      {loaded && items.length === 0 && !q && <p className="muted" style={{ padding: 16 }}>Aucune discussion. Touchez ＋ ou cherchez une personne.</p>}
+      {loaded && items.length === 0 && !q && <p className="muted" style={{ padding: 16 }}>Aucune discussion. Touchez le bouton + ou cherchez une personne.</p>}
       {(() => {
         const nq = norm(q.trim());
         const shown = nq ? items.filter((i) => norm(title(i)).includes(nq) || norm(i.last_text ?? "").includes(nq)) : items;
@@ -206,7 +207,7 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo }: {
   const name = title(item);
   return (<>
     <div className="top" style={{ justifyContent: "flex-start", gap: 10 }}>
-      <button onClick={onBack} aria-label="Retour" style={{ border: 0, background: "none", fontSize: 22, minWidth: 40, padding: 0 }}>←</button>
+      <button onClick={onBack} aria-label="Retour" style={{ border: 0, background: "none", minWidth: 40, padding: 0, display: "flex", alignItems: "center" }}><Icon name="back" size={26} /></button>
       <div onClick={onInfo} style={{ display: "flex", gap: 10, alignItems: "center", flex: 1, cursor: item.kind === "group" ? "pointer" : "default" }}>
         <Avatar name={name} src={item.kind === "direct" ? item.other_avatar : null} size={38} />
         <div><div>{name}</div>{item.kind === "group" && <div className="muted" style={{ fontSize: 12, fontWeight: 400 }}>Touchez pour les infos du groupe</div>}</div>
@@ -229,19 +230,19 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo }: {
     {note && <div className="muted" style={{ padding: "6px 16px", background: "#fff", color: "var(--error)" }}>{note}</div>}
     {recording !== null ? (
       <div className="composer" style={{ alignItems: "center" }}>
-        <button onClick={() => finishVoice(false)} aria-label="Annuler" style={{ minWidth: 48 }}>✕</button>
-        <div style={{ flex: 1, textAlign: "center", fontWeight: 600 }}><span style={{ color: "var(--error)" }}>●</span> {Math.floor(recording / 60)}:{String(recording % 60).padStart(2, "0")}</div>
+        <button onClick={() => finishVoice(false)} aria-label="Annuler" style={{ minWidth: 48, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name="close" /></button>
+        <div style={{ flex: 1, textAlign: "center", fontWeight: 600 }}><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: "var(--error)", marginRight: 6 }} /> {Math.floor(recording / 60)}:{String(recording % 60).padStart(2, "0")}</div>
         <button className="primary" onClick={() => finishVoice(true)}>Envoyer</button>
       </div>
     ) : (
       <div className="composer" style={{ alignItems: "center" }}>
-        <label aria-label="Envoyer une photo" style={{ fontSize: 24, minWidth: 44, minHeight: 44, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>📷
+        <label aria-label="Envoyer une photo" style={{ minWidth: 44, minHeight: 44, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "var(--primary)" }}><Icon name="camera" size={26} />
           <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { pickPhoto(e.target.files?.[0]); e.target.value = ""; }} />
         </label>
         <input placeholder="Message" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} />
         {text.trim() || !recorderSupported()
           ? <button className="primary" onClick={send}>Envoyer</button>
-          : <button className="primary" onClick={startVoice} aria-label="Message vocal">🎤</button>}
+          : <button className="primary" onClick={startVoice} aria-label="Message vocal" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name="mic" /></button>}
       </div>
     )}
   </>);
@@ -267,7 +268,7 @@ function GroupInfo({ item, people, onBack, onRenamed }: { item: Item; people: Re
   }
   return (<>
     <div className="top" style={{ justifyContent: "flex-start", gap: 10 }}>
-      <button onClick={onBack} aria-label="Retour" style={{ border: 0, background: "none", fontSize: 22, minWidth: 40, padding: 0 }}>←</button><span>Infos du groupe</span>
+      <button onClick={onBack} aria-label="Retour" style={{ border: 0, background: "none", minWidth: 40, padding: 0, display: "flex", alignItems: "center" }}><Icon name="back" size={26} /></button><span>Infos du groupe</span>
     </div>
     <div className="body">
       <div className="card" style={{ textAlign: "center" }}>
@@ -305,14 +306,14 @@ function NewChat({ ctx, isAdmin, people, members, onBack, onOpen }: {
   }
   return (<>
     <div className="top" style={{ justifyContent: "flex-start", gap: 10 }}>
-      <button onClick={onBack} aria-label="Retour" style={{ border: 0, background: "none", fontSize: 22, minWidth: 40, padding: 0 }}>←</button>
+      <button onClick={onBack} aria-label="Retour" style={{ border: 0, background: "none", minWidth: 40, padding: 0, display: "flex", alignItems: "center" }}><Icon name="back" size={26} /></button>
       <span>{group ? "Nouveau groupe" : "Nouvelle discussion"}</span>
     </div>
     <SearchBox value={q} onChange={setQ} placeholder="Rechercher une personne" />
     <div className="body" style={{ padding: 0 }}>
       {!group && isAdmin && !q && (
         <div onClick={() => setGroup(true)} style={{ display: "flex", gap: 12, padding: "12px 16px", background: "#fff", borderBottom: "1px solid var(--line)", alignItems: "center", cursor: "pointer" }}>
-          <div style={{ width: 48, height: 48, borderRadius: "50%", background: "var(--primary)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>👥</div><b>Nouveau groupe</b>
+          <div style={{ width: 48, height: 48, borderRadius: "50%", background: "var(--primary)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name="group" size={26} /></div><b>Nouveau groupe</b>
         </div>)}
       {group && <div style={{ padding: 16, background: "#fff" }}>
         <input placeholder="Nom du groupe" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />
