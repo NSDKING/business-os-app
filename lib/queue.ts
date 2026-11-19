@@ -39,6 +39,8 @@ export async function flushQueue(): Promise<string[]> {
       sent.push(p.id); // 23505 = already there
       // Ask the AI to read it and propose reports. Fire and forget: a failure never blocks sending.
       if (!error && (kind === "image" || p.text.trim().length >= 8)) supabase.functions.invoke("extract", { body: { message_id: p.id } }).catch(() => {});
+      // Tell the people it @mentions (push notification). Also fire and forget.
+      if (!error && kind === "text" && p.text.includes("@")) supabase.functions.invoke("notify", { body: { message_id: p.id } }).catch(() => {});
     }
     else break; // stop at the first failure and keep order
   }

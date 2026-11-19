@@ -79,6 +79,12 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
     return () => { supabase.removeChannel(sub); };
   }, [loadList, ctx.business_id]);
 
+  useEffect(() => { // opened from a notification: ?c=<conversation>&m=<message>
+    if (!loaded) return;
+    const u = new URLSearchParams(location.search); const c = u.get("c");
+    if (c && items.some((i) => i.channel_id === c)) { history.replaceState(null, "", "/"); go({ s: "convo", id: c, focus: u.get("m") || undefined }); }
+  }, [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const go = (s: Screen) => {
     setScreen(s); onFull(s.s !== "list"); if (s.s === "list") loadList();
     if (s.s === "convo") setItems((it) => it.map((i) => (i.channel_id === s.id ? { ...i, unread: 0 } : i)));

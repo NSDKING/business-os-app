@@ -5,6 +5,7 @@ import { enqueue, flushQueue, readQueue } from "@/lib/queue";
 import ReviewCard from "@/components/ReviewCard";
 import Approvers from "@/components/Approvers";
 import Compliance from "@/components/Compliance";
+import Notifications from "@/components/Notifications";
 import Business from "@/components/Business";
 import Chats from "@/components/Chats";
 import Avatar from "@/components/Avatar";
@@ -14,6 +15,13 @@ type Tab = "chat" | "reports" | "business" | "settings";
 type Ctx = { business_id: string; business: string; person_id: string; name: string; others?: { business_id: string; business: string }[] };
 
 export default function Home() {
+  // iPhone: the keyboard moves the page and it can stay shifted afterwards. Size the app to the visible area and keep the page at the top.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    const fit = () => { document.documentElement.style.setProperty("--app-h", (vv?.height ?? window.innerHeight) + "px"); if (window.scrollY !== 0) window.scrollTo(0, 0); };
+    fit(); vv?.addEventListener("resize", fit); vv?.addEventListener("scroll", fit); window.addEventListener("orientationchange", fit); window.addEventListener("focusout", () => setTimeout(fit, 100));
+    return () => { vv?.removeEventListener("resize", fit); vv?.removeEventListener("scroll", fit); window.removeEventListener("orientationchange", fit); };
+  }, []);
   const [ctx, setCtx] = useState<Ctx | null | undefined>(undefined);
   const [tab, setTab] = useState<Tab>("chat");
   const [online, setOnline] = useState(true);
@@ -185,6 +193,7 @@ function Settings({ ctx }: { ctx: Ctx }) {
         </label></div>
       </div>
     </div>
+    <Notifications businessId={ctx.business_id} />
     {(ctx.others?.length ?? 0) > 1 && <div className="card"><h3>Entreprise</h3>
       <p className="muted">Passez de votre entreprise réelle à la démonstration.</p>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
