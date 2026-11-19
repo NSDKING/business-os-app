@@ -26,6 +26,7 @@ export function MessageSheet(p: {
   targets: { id: string; name: string }[]; canForward: boolean; note: string; tagOnly?: boolean;
   receipts?: { name: string; state: "read" | "delivered" | "none" }[];
   assignees?: { id: string; name: string }[]; meId?: string;
+  canEdit?: boolean; canDelete?: boolean; onEdit?: () => void; onDelete?: () => void;
   onTask?: (title: string, assignee: string, due: string) => void; onReport?: () => void;
   onClose: () => void; onReply: () => void; onTag: (id: string) => void; onNewTag: (name: string) => void;
   onReact: (kind: string) => void; onSave: () => void; onPin: () => void; onForward: (channel: string) => void; onCopy: () => void;
@@ -76,6 +77,8 @@ export function MessageSheet(p: {
             {p.canForward && row("forward", "Transférer", () => setFwd(true))}
             {p.onTask && row("check", "Créer une tâche", () => { setTTitle(snippet(p.m).slice(0, 120)); setTask(true); })}
             {p.onReport && row("more", "Créer un rapport (l'IA lit ce message)", p.onReport)}
+            {p.canEdit && p.onEdit && row("edit", "Modifier", p.onEdit)}
+            {p.canDelete && p.onDelete && row("trash", "Supprimer", () => { if (confirm("Supprimer ce message pour tout le monde ? L'original reste conservé pour l'historique.")) p.onDelete!(); })}
             {p.m.kind === "text" && row("copy", "Copier le texte", p.onCopy)}
           </div>}
           {more && p.receipts && p.receipts.length > 0 && (() => {

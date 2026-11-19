@@ -90,7 +90,7 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
   if ((screen.s === "convo" || screen.s === "info") && cur) {
     return screen.s === "info"
       ? <GroupInfo item={cur} people={people} onBack={() => go({ s: "convo", id: cur.channel_id })} onRenamed={loadList} />
-      : <Convo ctx={ctx} item={cur} people={people} online={online} onQueue={onQueue} onRead={loadList} members={members} chats={items} focus={screen.s === "convo" ? screen.focus : undefined}
+      : <Convo ctx={ctx} item={cur} people={people} online={online} onQueue={onQueue} onRead={loadList} members={members} isAdmin={isAdmin} chats={items} focus={screen.s === "convo" ? screen.focus : undefined}
           onBack={() => go({ s: "list" })} onInfo={() => cur.kind === "group" && go({ s: "info", id: cur.channel_id })} />;
   }
 
@@ -197,8 +197,8 @@ function withMentions(text: string, names: string[]) {
     i % 2 ? <b key={i} style={{ color: "var(--primary)" }}>{part}</b> : part);
 }
 
-function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, onRead, members, chats, focus }: {
-  ctx: Ctx; item: Item; people: Record<string, Person>; online: boolean; onQueue: () => void; onBack: () => void; onInfo: () => void; onRead: () => void; members: { member_id: string; person_id: string }[]; chats: Item[]; focus?: string;
+function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, onRead, members, isAdmin, chats, focus }: {
+  ctx: Ctx; item: Item; people: Record<string, Person>; online: boolean; onQueue: () => void; onBack: () => void; onInfo: () => void; onRead: () => void; members: { member_id: string; person_id: string }[]; isAdmin: boolean; chats: Item[]; focus?: string;
 }) {
   const [msgs, setMsgs] = useState<Message[]>([]);
   const [text, setText] = useState("");
@@ -213,6 +213,7 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, onRead, mem
   const [menu, setMenu] = useState<string | null>(null);
   const [sheetNote, setSheetNote] = useState("");
   const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [editing, setEditing] = useState<Message | null>(null); // the message whose text is being changed
   const press = useRef<number | undefined>(undefined);
   const focused = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -260,6 +261,8 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, onRead, mem
     const sub = supabase.channel("msg-" + id)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "message", filter: `channel_id=eq.${id}` },
         (p) => { setMsgs((m) => (m.some((x) => x.id === (p.new as Message).id) ? m : [...m, p.new as Message])); read(); })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "message", filter: `channel_id=eq.${id}` },
+        (p) => { const n = p.new as Message; setMsgs((m) => m.map((x) => (x.id === n.id ? { ...x, text: n.text, kind: n.kind, edited: n.edited, attachment: n.attachment } : x))); })
       .subscribe();
     return () => { supabase.removeChannel(sub); };
   }, [id, load]);
@@ -330,7 +333,7 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, onRead, mem
   const [tagOnly, setTagOnly] = useState(false);
   const start = useRef<{ x: number; y: number } | null>(null);
   const dxRef = useRef(0);
-  const open = (mid: string, only = false) => { setSheetNote(""); setTagOnly(only); setMenu(mid); };
+  const open = (mid: string, only = false) => { if (msgs.find((x) => x.id === mid)?.kind === "deleted") return; setSheetNote(""); setTagOnly(only); setMenu(mid); };
   const bind = (mid: string) => ({
     onPointerDown: (e: React.PointerEvent) => {
       if ((e.target as HTMLElement).closest("button,audio,input,a")) return;
@@ -358,8 +361,21 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, onRead, mem
     onContextMenu: (e: React.MouseEvent) => { e.preventDefault(); open(mid); },
   });
 
+  async function removeMessage(m: Message) {
+    setSheetNote("");
+    const { error } = await supabase.rpc("delete_message", { p_message: m.id });
+    if (error) return setSheetNote("Impossible de supprimer (hors ligne ?).");
+    patch(m.id, (x) => ({ ...x, kind: "deleted", text: "", attachment: null, edited: false })); setMenu(null);
+  }
   async function send() {
-    const t = text.trim(); if (!t) return; setText("");
+    const t = text.trim(); if (!t) return;
+    if (editing) {
+      const m = editing; setNote("");
+      const { error } = await supabase.rpc("edit_message", { p_message: m.id, p_text: t });
+      if (error) return setNote("Impossible de modifier (hors ligne ?).");
+      patch(m.id, (x) => ({ ...x, text: t, edited: t !== m.text ? true : x.edited })); setEditing(null); setText(""); return;
+    }
+    setText("");
     const p = { id: crypto.randomUUID(), business_id: ctx.business_id, channel_id: id, person_id: ctx.person_id, sender_label: ctx.name, text: t, sent_at: new Date().toISOString(), reply_to: replyTo?.id ?? null };
     setReplyTo(null);
     setMsgs((m) => [...m, { ...p, kind: "text", attachment: null }]);
@@ -429,12 +445,12 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, onRead, mem
             {m.reply_to && <div onClick={() => jump(m.reply_to!)} style={{ borderLeft: "3px solid var(--primary)", background: "rgba(0,0,0,.05)", padding: "4px 8px", borderRadius: 6, marginBottom: 4, fontSize: 13, cursor: "pointer" }}>
               <b>{quoted?.sender_label ?? "Message"}</b>
               <div className="muted" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220 }}>{quoted ? snippet(quoted) : "Message plus ancien"}</div></div>}
-            {(m.kind === "image" || m.kind === "audio") ? <MediaView m={m} /> : <div>{withMentions(m.text, mentionNames)}</div>}
+            {m.kind === "deleted" ? <div className="muted" style={{ fontStyle: "italic" }}>Message supprimé</div> : (m.kind === "image" || m.kind === "audio") ? <MediaView m={m} /> : <div>{withMentions(m.text, mentionNames)}</div>}
             <TagPills ids={(m.message_tag ?? []).map((t) => t.tag_id)} tags={tags} />
             {counts.length > 0 && <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
               {counts.map((r) => <button key={r.kind} onClick={() => react(m, r.kind)} aria-label={r.label} style={{ display: "flex", alignItems: "center", gap: 3, padding: "2px 8px", minHeight: 26, borderRadius: 12, border: "1px solid var(--line)", background: r.mine ? "var(--soft)" : "var(--surface)", color: r.mine ? "var(--primary)" : "inherit", fontSize: 12 }}><Icon name={r.icon} size={14} />{r.n}</button>)}
             </div>}
-            <div className="t">{isPinned(m) && <Icon name="pin" size={12} />} {saved.has(m.id) && <Icon name="bookmark" size={12} />} {new Date(m.sent_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}{mine && (() => {
+            <div className="t">{isPinned(m) && <Icon name="pin" size={12} />} {saved.has(m.id) && <Icon name="bookmark" size={12} />} {m.edited && m.kind !== "deleted" && "modifié · "}{new Date(m.sent_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}{mine && (() => {
               const st = statusOf(m);
               return <span title={{ sending: "Envoi en cours", sent: "Envoyé", delivered: "Distribué", read: "Lu" }[st]} style={{ marginLeft: 4, color: st === "read" ? "var(--primary)" : "var(--muted)" }}>
                 <Icon name={st === "sending" ? "clock" : st === "sent" ? "check" : "checks"} size={14} /></span>; })()}</div>
@@ -442,6 +458,9 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, onRead, mem
       })}
       <div ref={end} />
     </div>
+    {editing && <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "6px 16px", background: "var(--surface)", borderTop: "1px solid var(--line)" }}>
+      <Icon name="edit" size={18} /><div style={{ flex: 1, minWidth: 0, borderLeft: "3px solid var(--primary)", paddingLeft: 8, fontSize: 13 }}><b>Modifier le message</b><div className="muted" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{editing.text}</div></div>
+      <button onClick={() => { setEditing(null); setText(""); }} aria-label="Annuler la modification" style={{ border: 0, background: "none", minWidth: 36 }}><Icon name="close" size={18} /></button></div>}
     {replyTo && <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "6px 16px", background: "var(--surface)", borderTop: "1px solid var(--line)" }}>
       <Icon name="reply" size={18} /><div style={{ flex: 1, minWidth: 0, borderLeft: "3px solid var(--primary)", paddingLeft: 8, fontSize: 13 }}><b>{replyTo.sender_label}</b><div className="muted" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{snippet(replyTo)}</div></div>
       <button onClick={() => setReplyTo(null)} aria-label="Annuler la réponse" style={{ border: 0, background: "none", minWidth: 36 }}><Icon name="close" size={18} /></button></div>}
@@ -450,6 +469,8 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, onRead, mem
       return <MessageSheet key={m.id + tagOnly} m={m} tags={tags} activeTags={new Set((m.message_tag ?? []).map((t) => t.tag_id))}
         myReactions={new Set((m.message_reaction ?? []).filter((r) => r.member_id === me).map((r) => r.kind))}
         saved={saved.has(m.id)} pinned={isPinned(m)} canForward={m.kind === "text"} note={sheetNote}
+        canEdit={m.kind === "text" && m.person_id === ctx.person_id} canDelete={m.person_id === ctx.person_id || (isAdmin && item.kind === "group")}
+        onEdit={() => { setMenu(null); setReplyTo(null); setEditing(m); setText(m.text); focusInput(); }} onDelete={() => removeMessage(m)}
         assignees={members.map((x) => ({ id: x.member_id, name: people[x.person_id]?.name ?? "?" }))} meId={me ?? undefined}
         onTask={(t, a, d) => createTask(m, t, a, d)} onReport={() => createReport(m)} tagOnly={tagOnly}
         receipts={m.person_id === ctx.person_id ? receipts.map((r) => ({ name: r.person_name, state: recState(r, tOf(m)) })) : undefined}
@@ -476,7 +497,7 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, onRead, mem
         </div>}
         <input ref={inputRef} placeholder="Message" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} />
         {text.trim() || !recorderSupported()
-          ? <button className="primary" onClick={send}>Envoyer</button>
+          ? <button className="primary" onClick={send}>{editing ? "Enregistrer" : "Envoyer"}</button>
           : <button className="primary" onClick={startVoice} aria-label="Message vocal" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name="mic" /></button>}
       </div>
     )}

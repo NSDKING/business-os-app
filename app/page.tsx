@@ -86,7 +86,7 @@ function Reports({ ctx }: { ctx: Ctx }) {
       let src = "chat", ev = "", photo: string | undefined;
       if (s?.length) {
         const { data: m } = await supabase.from("message").select("text, kind, attachment, sender_label, sent_at").eq("id", s[0].message_id).single();
-        if (m) { src = `${m.sender_label} · ${new Date(m.sent_at).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}`; ev = m.kind === "image" ? (m.text || "Photo envoyée dans le chat") : m.text; if (m.kind === "image") photo = m.attachment ?? undefined; }
+        if (m) { src = `${m.sender_label} · ${new Date(m.sent_at).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}`; ev = m.kind === "deleted" ? "Message supprimé depuis : vérifiez avant d'approuver." : m.kind === "image" ? (m.text || "Photo envoyée dans le chat") : m.text; if (m.kind === "image") photo = m.attachment ?? undefined; }
       }
       out.push({ ...d, rt: rt?.label, src, ev, photo });
     }
