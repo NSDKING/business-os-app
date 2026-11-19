@@ -5,13 +5,13 @@ import { supabase, type Message } from "@/lib/supabase";
 import { enqueue, flushQueue, readQueue } from "@/lib/queue";
 import Avatar from "./Avatar";
 import Icon from "./Icon";
-import { Collection, MessageSheet, TagPills, TaskList, REACTIONS, snippet, type Tag } from "./MessageTools";
+import { Collection, MessageSheet, TagPills, TaskList, MessageSearch, REACTIONS, snippet, type Tag } from "./MessageTools";
 
 export type Ctx = { business_id: string; business: string; person_id: string; name: string };
 type Item = {
   channel_id: string; kind: "group" | "direct"; name: string; other_person: string | null; other_name: string | null;
   other_avatar: string | null; last_kind: string | null; last_text: string | null; last_at: string | null;
-  last_sender: string | null; unread: number; unit_name?: string | null; last_tags?: string[] | null;
+  last_sender: string | null; unread: number; mentioned?: boolean; unit_name?: string | null; last_tags?: string[] | null;
 };
 type Person = { name: string; avatar: string | null };
 type Screen = { s: "list" } | { s: "new" } | { s: "convo"; id: string; focus?: string } | { s: "info"; id: string };
@@ -49,10 +49,11 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
   const [items, setItems] = useState<Item[]>([]);
   const [people, setPeople] = useState<Record<string, Person>>({});
   const [members, setMembers] = useState<{ member_id: string; person_id: string }[]>([]);
+  const [allTags, setAllTags] = useState<Tag[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [q, setQ] = useState("");
   const [unit, setUnit] = useState<string>("");
-  const [tab, setTab] = useState<"all" | "unread" | "groups" | "tagged" | "saved" | "tasks">("all");
+  const [tab, setTab] = useState<"all" | "unread" | "groups" | "tagged" | "saved" | "tasks" | "search">("all");
   const [searchErr, setSearchErr] = useState("");
 
   const loadList = useCallback(async () => {
@@ -62,6 +63,7 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
     supabase.rpc("mark_delivered", { p_business: ctx.business_id }).then(() => {});
   }, [ctx.business_id]);
 
+  useEffect(() => { supabase.from("tag").select("id,name,color").eq("business_id", ctx.business_id).order("name").then(({ data }) => setAllTags((data as Tag[]) ?? [])); }, [ctx.business_id]);
   useEffect(() => {
     loadList();
     supabase.from("person").select("id, display_name, avatar").then(({ data }) => {
@@ -98,10 +100,10 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
       <button onClick={() => go({ s: "new" })} aria-label="Nouvelle discussion" style={{ border: 0, background: "none", minWidth: 44, color: "var(--text)", display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name="edit" size={27} /></button></div>
     <SearchBox value={q} onChange={setQ} placeholder="Rechercher une personne ou un groupe" />
     <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "2px 16px 12px" }}>
-      {([["all", "Tout"], ["unread", "Non lus"], ["groups", "Groupes"], ["tagged", "Étiquetés"], ["saved", "Enregistrés"], ["tasks", "Tâches"]] as const).map(([k, l]) =>
+      {([["all", "Tout"], ["unread", "Non lus"], ["groups", "Groupes"], ["tagged", "Étiquetés"], ["saved", "Enregistrés"], ["tasks", "Tâches"], ["search", "Recherche"]] as const).map(([k, l]) =>
         <button key={k} style={chipStyle(tab === k)} onClick={() => setTab(k)}>{l}</button>)}
     </div>
-    {!["tagged", "saved", "tasks"].includes(tab) && (() => {
+    {!["tagged", "saved", "tasks", "search"].includes(tab) && (() => {
       const units = [...new Set(items.map((i) => i.unit_name).filter(Boolean))] as string[];
       if (units.length < 2) return null;
       const chip = chipStyle;
@@ -111,13 +113,16 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
       </div>;
     })()}
     <div className="body" style={{ padding: 0 }}>
+      {tab === "search" && <MessageSearch businessId={ctx.business_id} tags={allTags}
+        people={members.map((x) => ({ id: x.person_id, name: people[x.person_id]?.name ?? "?" }))}
+        chatName={(c) => { const it = items.find((x) => x.channel_id === c); return it ? title(it) : "Discussion"; }} onOpen={(c, m) => go({ s: "convo", id: c, focus: m })} />}
       {tab === "tasks" && <TaskList businessId={ctx.business_id} meId={members.find((m) => m.person_id === ctx.person_id)?.member_id ?? ""}
         nameOf={(mid) => people[members.find((m) => m.member_id === mid)?.person_id ?? ""]?.name ?? "?"} onOpen={(c, m) => go({ s: "convo", id: c, focus: m })} />}
       {(tab === "tagged" || tab === "saved") && <Collection mode={tab} businessId={ctx.business_id}
         chatName={(c) => { const it = items.find((x) => x.channel_id === c); return it ? title(it) : "Discussion"; }}
         onOpen={(c, m) => go({ s: "convo", id: c, focus: m })} />}
-      {!["tagged", "saved", "tasks"].includes(tab) && loaded && items.length === 0 && !q && <p className="muted" style={{ padding: 16 }}>Aucune discussion. Touchez le bouton + ou cherchez une personne.</p>}
-      {!["tagged", "saved", "tasks"].includes(tab) && (() => {
+      {!["tagged", "saved", "tasks", "search"].includes(tab) && loaded && items.length === 0 && !q && <p className="muted" style={{ padding: 16 }}>Aucune discussion. Touchez le bouton + ou cherchez une personne.</p>}
+      {!["tagged", "saved", "tasks", "search"].includes(tab) && (() => {
         const nq = norm(q.trim());
         const base = tab === "unread" ? items.filter((i) => i.unread > 0) : tab === "groups" ? items.filter((i) => i.kind === "group") : items;
         const byUnit = unit ? base.filter((i) => i.unit_name === unit) : base;
@@ -137,6 +142,7 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 4, alignItems: "center" }}>
                     <span style={{ color: "var(--muted)", fontSize: 16, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{preview(i)}</span>
+                    {i.unread > 0 && i.mentioned && <span title="On vous a mentionné" style={{ background: "var(--primary)", color: "#fff", borderRadius: 16, minWidth: 30, height: 30, fontSize: 15, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flex: "none", marginLeft: "auto", marginRight: 6 }}>@</span>}
                     {i.unread > 0 && <span style={{ background: "var(--soft)", color: "var(--primary)", borderRadius: 16, minWidth: 30, height: 30, padding: "0 9px", fontSize: 15, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}>{i.unread}</span>}
                   </div>
                   {(i.last_tags?.length || (i.kind === "group" && i.unit_name)) ? <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
@@ -183,6 +189,14 @@ function MediaView({ m }: { m: Message }) {
   </>);
 }
 
+// Shows "@Name" in bold and in the accent colour when it matches a person of the business.
+function withMentions(text: string, names: string[]) {
+  const list = [...new Set(names)].sort((a, b) => b.length - a.length).map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  if (!list.length || !text.includes("@")) return text;
+  return text.split(new RegExp("(@(?:" + list.join("|") + "))", "i")).map((part, i) =>
+    i % 2 ? <b key={i} style={{ color: "var(--primary)" }}>{part}</b> : part);
+}
+
 function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, onRead, members, chats, focus }: {
   ctx: Ctx; item: Item; people: Record<string, Person>; online: boolean; onQueue: () => void; onBack: () => void; onInfo: () => void; onRead: () => void; members: { member_id: string; person_id: string }[]; chats: Item[]; focus?: string;
 }) {
@@ -221,6 +235,13 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, onRead, mem
     const st = receipts.map((r) => recState(r, tOf(m)));
     return st.every((x) => x === "read") ? "read" : st.every((x) => x !== "none") ? "delivered" : "sent";
   };
+  // @mentions: typing "@" in a group lists the people; their full name is inserted and they get an "@" in their chat list.
+  const mentionNames = members.map((x) => people[x.person_id]?.name).filter(Boolean) as string[];
+  const frag = item.kind === "group" ? /(?:^|\s)@([^\s@]*)$/.exec(text)?.[1] : undefined;
+  const suggestions = frag === undefined ? [] : members
+    .filter((x) => x.person_id !== ctx.person_id && (people[x.person_id]?.name ?? "").toLowerCase().includes(frag.toLowerCase()))
+    .slice(0, 5);
+  const pickMention = (name: string) => { setText(text.replace(/@([^\s@]*)$/, "@" + name + " ")); inputRef.current?.focus(); };
   const focusInput = () => setTimeout(() => inputRef.current?.focus(), 0);
 
   const load = useCallback(async () => {
@@ -408,7 +429,7 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, onRead, mem
             {m.reply_to && <div onClick={() => jump(m.reply_to!)} style={{ borderLeft: "3px solid var(--primary)", background: "rgba(0,0,0,.05)", padding: "4px 8px", borderRadius: 6, marginBottom: 4, fontSize: 13, cursor: "pointer" }}>
               <b>{quoted?.sender_label ?? "Message"}</b>
               <div className="muted" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220 }}>{quoted ? snippet(quoted) : "Message plus ancien"}</div></div>}
-            {(m.kind === "image" || m.kind === "audio") ? <MediaView m={m} /> : <div>{m.text}</div>}
+            {(m.kind === "image" || m.kind === "audio") ? <MediaView m={m} /> : <div>{withMentions(m.text, mentionNames)}</div>}
             <TagPills ids={(m.message_tag ?? []).map((t) => t.tag_id)} tags={tags} />
             {counts.length > 0 && <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
               {counts.map((r) => <button key={r.kind} onClick={() => react(m, r.kind)} aria-label={r.label} style={{ display: "flex", alignItems: "center", gap: 3, padding: "2px 8px", minHeight: 26, borderRadius: 12, border: "1px solid var(--line)", background: r.mine ? "var(--soft)" : "var(--surface)", color: r.mine ? "var(--primary)" : "inherit", fontSize: 12 }}><Icon name={r.icon} size={14} />{r.n}</button>)}
@@ -444,10 +465,15 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, onRead, mem
         <button className="primary" onClick={() => finishVoice(true)}>Envoyer</button>
       </div>
     ) : (
-      <div className="composer" style={{ alignItems: "center" }}>
+      <div className="composer" style={{ alignItems: "center", position: "relative" }}>
         <label aria-label="Envoyer une photo" style={{ minWidth: 44, minHeight: 44, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "var(--primary)" }}><Icon name="camera" size={26} />
           <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { pickPhoto(e.target.files?.[0]); e.target.value = ""; }} />
         </label>
+        {suggestions.length > 0 && <div style={{ position: "absolute", left: 8, right: 8, bottom: "100%", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 -4px 16px rgba(0,0,0,.12)", overflow: "hidden", zIndex: 5 }}>
+          {suggestions.map((x) => <button key={x.member_id} onMouseDown={(e) => e.preventDefault()} onClick={() => pickMention(people[x.person_id]?.name ?? "")}
+            style={{ display: "flex", gap: 10, alignItems: "center", width: "100%", textAlign: "left", background: "none", border: 0, borderBottom: "1px solid var(--line)", padding: "8px 12px", minHeight: 48 }}>
+            <Avatar name={people[x.person_id]?.name ?? "?"} src={people[x.person_id]?.avatar} size={32} />{people[x.person_id]?.name}</button>)}
+        </div>}
         <input ref={inputRef} placeholder="Message" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} />
         {text.trim() || !recorderSupported()
           ? <button className="primary" onClick={send}>Envoyer</button>

@@ -186,3 +186,60 @@ export function TaskList({ businessId, meId, nameOf, onOpen }: {
     {done.map(item)}
   </>);
 }
+
+type Hit = { id: string; channel_id: string; sent_at: string; sender_label: string; person_id: string | null; kind: string; text: string; message_tag: { tag_id: string }[] };
+
+// "Recherche": words in messages, narrowed by person, type, tag and period (spec section 7). Only messages the person can see come back.
+export function MessageSearch({ businessId, tags, people, chatName, onOpen }: {
+  businessId: string; tags: Tag[]; people: { id: string; name: string }[]; chatName: (channel: string) => string; onOpen: (channel: string, message: string) => void;
+}) {
+  const [q, setQ] = useState(""); const [kind, setKind] = useState(""); const [tag, setTag] = useState(""); const [who, setWho] = useState(""); const [days, setDays] = useState(0);
+  const [hits, setHits] = useState<Hit[] | null>(null);
+  const active = q.trim().length >= 2 || !!(kind || tag || who || days);
+  useEffect(() => {
+    if (!active) { setHits(null); return; }
+    let on = true;
+    const t = setTimeout(async () => {
+      let qb = supabase.from("message").select(`id,channel_id,sent_at,sender_label,person_id,kind,text,message_tag${tag ? "!inner" : ""}(tag_id)`).eq("business_id", businessId);
+      const term = q.trim().replace(/[%_,()]/g, " ");
+      if (term.length >= 2) qb = qb.ilike("text", `%${term}%`);
+      if (kind) qb = qb.eq("kind", kind);
+      if (who) qb = qb.eq("person_id", who);
+      if (tag) qb = qb.eq("message_tag.tag_id", tag);
+      if (days) qb = qb.gte("sent_at", new Date(Date.now() - days * 86400000).toISOString());
+      const { data } = await qb.order("sent_at", { ascending: false }).limit(60);
+      if (on) setHits((data ?? []) as unknown as Hit[]);
+    }, 300);
+    return () => { on = false; clearTimeout(t); };
+  }, [q, kind, tag, who, days, businessId, active]);
+  const chip = (on: boolean) => ({ flex: "none" as const, padding: "5px 12px", borderRadius: 16, border: "1.5px solid var(--primary)", background: on ? "var(--primary)" : "var(--surface)", color: on ? "#fff" : "var(--primary)", fontWeight: 600, fontSize: 13, minHeight: 34 });
+  const row = (label: string, items: [string, string][], val: string, set: (v: string) => void) => (
+    <div style={{ display: "flex", gap: 8, overflowX: "auto", alignItems: "center", padding: "4px 16px" }}>
+      <span className="muted" style={{ flex: "none", width: 64, fontSize: 12 }}>{label}</span>
+      {items.map(([k, l]) => <button key={k} style={chip(val === k)} onClick={() => set(val === k ? "" : k)}>{l}</button>)}
+    </div>);
+  return (<>
+    <div style={{ padding: "8px 16px 4px", background: "var(--surface)" }}>
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Mots dans les messages" aria-label="Rechercher dans les messages" style={{ width: "100%" }} />
+    </div>
+    <div style={{ background: "var(--surface)", paddingBottom: 8, borderBottom: "1px solid var(--line)" }}>
+      {row("Type", [["text", "Texte"], ["image", "Photo"], ["audio", "Vocal"]], kind, setKind)}
+      {row("Période", [["7", "7 jours"], ["30", "30 jours"]], days ? String(days) : "", (v) => setDays(Number(v)))}
+      {tags.length > 0 && row("Étiquette", tags.map((t) => [t.id, t.name] as [string, string]), tag, setTag)}
+      {row("Personne", people.map((p) => [p.id, p.name.split(" ")[0]] as [string, string]), who, setWho)}
+    </div>
+    {!active && <p className="muted" style={{ padding: 16 }}>Tapez des mots, ou choisissez un filtre, par exemple l'étiquette « Paiement ».</p>}
+    {active && hits === null && <p className="muted" style={{ padding: 16 }}>Recherche…</p>}
+    {hits && hits.length === 0 && <p className="muted" style={{ padding: 16 }}>Aucun message trouvé.</p>}
+    {hits && hits.length > 0 && <div className="muted" style={{ padding: "8px 16px 0", fontSize: 12 }}>{hits.length}{hits.length === 60 ? "+" : ""} message{hits.length > 1 ? "s" : ""}</div>}
+    {(hits ?? []).map((h) => (
+      <div key={h.id} onClick={() => onOpen(h.channel_id, h.id)} style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)", background: "var(--surface)", cursor: "pointer" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+          <b style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.sender_label}<span className="muted" style={{ fontWeight: 400, fontSize: 12 }}> · {chatName(h.channel_id)}</span></b>
+          <span className="muted" style={{ fontSize: 12 }}>{new Date(h.sent_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })}</span>
+        </div>
+        <div className="muted" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>{snippet(h as unknown as Pick<Message, "kind" | "text">)}</div>
+        <TagPills ids={h.message_tag.map((t) => t.tag_id)} tags={tags} />
+      </div>))}
+  </>);
+}
