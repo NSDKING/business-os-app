@@ -25,10 +25,13 @@ export function MessageSheet(p: {
   m: Message; tags: Tag[]; activeTags: Set<string>; myReactions: Set<string>; saved: boolean; pinned: boolean;
   targets: { id: string; name: string }[]; canForward: boolean; note: string; tagOnly?: boolean;
   receipts?: { name: string; state: "read" | "delivered" | "none" }[];
+  assignees?: { id: string; name: string }[]; meId?: string;
+  onTask?: (title: string, assignee: string, due: string) => void; onReport?: () => void;
   onClose: () => void; onReply: () => void; onTag: (id: string) => void; onNewTag: (name: string) => void;
   onReact: (kind: string) => void; onSave: () => void; onPin: () => void; onForward: (channel: string) => void; onCopy: () => void;
 }) {
-  const [name, setName] = useState(""); const [fwd, setFwd] = useState(false); const [more, setMore] = useState(!p.tagOnly);
+  const [name, setName] = useState(""); const [fwd, setFwd] = useState(false);
+  const [task, setTask] = useState(false); const [tTitle, setTTitle] = useState(""); const [tWho, setTWho] = useState(p.meId ?? ""); const [tDue, setTDue] = useState(""); const [more, setMore] = useState(!p.tagOnly);
   const row = (icon: Parameters<typeof Icon>[0]["name"], label: string, fn: () => void) => (
     <button key={label} onClick={fn} style={{ display: "flex", gap: 12, alignItems: "center", width: "100%", textAlign: "left", background: "none", border: 0, padding: "12px 4px", fontSize: 16, minHeight: 48 }}>
       <Icon name={icon} size={22} />{label}</button>);
@@ -36,7 +39,17 @@ export function MessageSheet(p: {
     <div onClick={p.onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 60, display: "flex", alignItems: "flex-end" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--surface)", width: "100%", maxHeight: "88%", overflowY: "auto", borderRadius: "16px 16px 0 0", padding: "14px 16px 20px" }}>
         <div className="muted" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: 10 }}>{p.m.sender_label} : {snippet(p.m) || "…"}</div>
-        {fwd ? (<>
+        {task ? (<>
+          <b>Créer une tâche</b>
+          <input value={tTitle} maxLength={200} onChange={(e) => setTTitle(e.target.value)} style={{ width: "100%", margin: "8px 0" }} aria-label="Tâche" />
+          <div className="muted">Pour</div>
+          <select value={tWho} onChange={(e) => setTWho(e.target.value)} style={{ width: "100%", minHeight: 44, margin: "4px 0 8px" }}>
+            {(p.assignees ?? []).map((a) => <option key={a.id} value={a.id}>{a.id === p.meId ? `${a.name} (moi)` : a.name}</option>)}</select>
+          <div className="muted">Échéance (facultatif)</div>
+          <input type="date" value={tDue} onChange={(e) => setTDue(e.target.value)} style={{ width: "100%", minHeight: 44, margin: "4px 0 12px" }} />
+          <div className="row"><button className="primary" disabled={!tTitle.trim() || !tWho} onClick={() => p.onTask?.(tTitle.trim(), tWho, tDue)}>Créer la tâche</button>
+            <button onClick={() => setTask(false)}>Retour</button></div>
+        </>) : fwd ? (<>
           <b>Transférer à</b>
           {p.targets.map((t) => <button key={t.id} onClick={() => p.onForward(t.id)} style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: 0, borderBottom: "1px solid var(--line)", padding: "12px 4px", fontSize: 16 }}>{t.name}</button>)}
           <p><button onClick={() => setFwd(false)}>Retour</button></p>
@@ -61,6 +74,8 @@ export function MessageSheet(p: {
             {row("bookmark", p.saved ? "Retirer des enregistrés" : "Enregistrer", p.onSave)}
             {row("pin", p.pinned ? "Détacher" : "Épingler dans la discussion", p.onPin)}
             {p.canForward && row("forward", "Transférer", () => setFwd(true))}
+            {p.onTask && row("check", "Créer une tâche", () => { setTTitle(snippet(p.m).slice(0, 120)); setTask(true); })}
+            {p.onReport && row("more", "Créer un rapport (l'IA lit ce message)", p.onReport)}
             {p.m.kind === "text" && row("copy", "Copier le texte", p.onCopy)}
           </div>}
           {more && p.receipts && p.receipts.length > 0 && (() => {
@@ -122,5 +137,52 @@ export function Collection({ mode, businessId, chatName, onOpen }: {
         <div className="muted" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>{snippet(r.message)}</div>
         <TagPills ids={r.tags.map((t) => t.id)} tags={r.tags} />
       </div>))}
+  </>);
+}
+
+type TaskRow = { id: string; title: string; assignee: string; due_on: string | null; status: string; message_id: string; message: { channel_id: string; sender_label: string; text: string; kind: string } | null };
+
+// "Tâches": actions created from conversations, with owner, deadline and the message they came from (spec section 10).
+export function TaskList({ businessId, meId, nameOf, onOpen }: {
+  businessId: string; meId: string; nameOf: (member: string) => string; onOpen: (channel: string, message: string) => void;
+}) {
+  const [rows, setRows] = useState<TaskRow[] | null>(null); const [mine, setMine] = useState(true); const [err, setErr] = useState("");
+  const load = () => supabase.from("task").select("id,title,assignee,due_on,status,message_id,message:message_id(channel_id,sender_label,text,kind)")
+    .eq("business_id", businessId).order("due_on", { ascending: true, nullsFirst: false }).limit(200)
+    .then(({ data }) => setRows((data ?? []) as unknown as TaskRow[]));
+  useEffect(() => { load(); }, [businessId]); // eslint-disable-line react-hooks/exhaustive-deps
+  async function toggle(t: TaskRow) {
+    setErr("");
+    const { error } = await supabase.rpc("set_task_done", { p_task: t.id, p_done: t.status !== "done" });
+    if (error) setErr("Seule la personne concernée ou celle qui l'a créée peut la cocher."); else load();
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  const list = (rows ?? []).filter((t) => !mine || t.assignee === meId);
+  const open = list.filter((t) => t.status === "open"), done = list.filter((t) => t.status === "done");
+  const item = (t: TaskRow) => (
+    <div key={t.id} style={{ display: "flex", gap: 12, padding: "12px 16px", borderBottom: "1px solid var(--line)", background: "var(--surface)", alignItems: "flex-start" }}>
+      <button onClick={() => toggle(t)} aria-label={t.status === "done" ? "Rouvrir" : "Marquer fait"} style={{ flex: "none", width: 28, height: 28, minHeight: 28, padding: 0, borderRadius: 14, border: "2px solid var(--primary)", background: t.status === "done" ? "var(--primary)" : "var(--surface)", color: "#fff", display: "grid", placeItems: "center" }}>
+        {t.status === "done" && <Icon name="check" size={16} />}</button>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontWeight: 600, textDecoration: t.status === "done" ? "line-through" : undefined, opacity: t.status === "done" ? 0.6 : 1 }}>{t.title}</div>
+        <div className="muted" style={{ fontSize: 13 }}>
+          {t.assignee === meId ? "Moi" : nameOf(t.assignee)}
+          {t.due_on && <span style={{ color: t.status === "open" && t.due_on < today ? "var(--error)" : undefined, fontWeight: t.status === "open" && t.due_on < today ? 700 : 400 }}> · {t.status === "open" && t.due_on < today ? "en retard, " : ""}{new Date(t.due_on + "T00:00").toLocaleDateString("fr-FR", { weekday: "short", day: "2-digit", month: "2-digit" })}</span>}
+        </div>
+        {t.message && <div onClick={() => onOpen(t.message!.channel_id, t.message_id)} className="muted" style={{ fontSize: 13, marginTop: 4, cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          Message de {t.message.sender_label} : {snippet(t.message as Pick<Message, "kind" | "text">)}</div>}
+      </div>
+    </div>);
+  return (<>
+    <div style={{ display: "flex", gap: 8, padding: "8px 16px", background: "var(--surface)", borderBottom: "1px solid var(--line)" }}>
+      <button onClick={() => setMine(true)} style={{ flex: 1, background: mine ? "var(--primary)" : "var(--surface)", color: mine ? "#fff" : "var(--text)" }}>Mes tâches</button>
+      <button onClick={() => setMine(false)} style={{ flex: 1, background: !mine ? "var(--primary)" : "var(--surface)", color: !mine ? "#fff" : "var(--text)" }}>Toutes</button>
+    </div>
+    {err && <p style={{ color: "var(--error)", padding: "0 16px" }}>{err}</p>}
+    {rows === null && <p className="muted" style={{ padding: 16 }}>Chargement…</p>}
+    {rows && list.length === 0 && <p className="muted" style={{ padding: 16 }}>Aucune tâche. Appuyez longuement sur un message, puis « Créer une tâche ».</p>}
+    {open.map(item)}
+    {done.length > 0 && <div className="muted" style={{ padding: "12px 16px 4px", fontWeight: 600 }}>Terminées</div>}
+    {done.map(item)}
   </>);
 }

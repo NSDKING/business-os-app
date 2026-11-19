@@ -5,7 +5,7 @@ import { supabase, type Message } from "@/lib/supabase";
 import { enqueue, flushQueue, readQueue } from "@/lib/queue";
 import Avatar from "./Avatar";
 import Icon from "./Icon";
-import { Collection, MessageSheet, TagPills, REACTIONS, snippet, type Tag } from "./MessageTools";
+import { Collection, MessageSheet, TagPills, TaskList, REACTIONS, snippet, type Tag } from "./MessageTools";
 
 export type Ctx = { business_id: string; business: string; person_id: string; name: string };
 type Item = {
@@ -52,7 +52,7 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
   const [loaded, setLoaded] = useState(false);
   const [q, setQ] = useState("");
   const [unit, setUnit] = useState<string>("");
-  const [tab, setTab] = useState<"all" | "unread" | "groups" | "tagged" | "saved">("all");
+  const [tab, setTab] = useState<"all" | "unread" | "groups" | "tagged" | "saved" | "tasks">("all");
   const [searchErr, setSearchErr] = useState("");
 
   const loadList = useCallback(async () => {
@@ -88,7 +88,7 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
   if ((screen.s === "convo" || screen.s === "info") && cur) {
     return screen.s === "info"
       ? <GroupInfo item={cur} people={people} onBack={() => go({ s: "convo", id: cur.channel_id })} onRenamed={loadList} />
-      : <Convo ctx={ctx} item={cur} people={people} online={online} onQueue={onQueue} onRead={loadList} chats={items} focus={screen.s === "convo" ? screen.focus : undefined}
+      : <Convo ctx={ctx} item={cur} people={people} online={online} onQueue={onQueue} onRead={loadList} members={members} chats={items} focus={screen.s === "convo" ? screen.focus : undefined}
           onBack={() => go({ s: "list" })} onInfo={() => cur.kind === "group" && go({ s: "info", id: cur.channel_id })} />;
   }
 
@@ -98,10 +98,10 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
       <button onClick={() => go({ s: "new" })} aria-label="Nouvelle discussion" style={{ border: 0, background: "none", minWidth: 44, color: "var(--text)", display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name="edit" size={27} /></button></div>
     <SearchBox value={q} onChange={setQ} placeholder="Rechercher une personne ou un groupe" />
     <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "2px 16px 12px" }}>
-      {([["all", "Tout"], ["unread", "Non lus"], ["groups", "Groupes"], ["tagged", "Étiquetés"], ["saved", "Enregistrés"]] as const).map(([k, l]) =>
+      {([["all", "Tout"], ["unread", "Non lus"], ["groups", "Groupes"], ["tagged", "Étiquetés"], ["saved", "Enregistrés"], ["tasks", "Tâches"]] as const).map(([k, l]) =>
         <button key={k} style={chipStyle(tab === k)} onClick={() => setTab(k)}>{l}</button>)}
     </div>
-    {tab !== "tagged" && tab !== "saved" && (() => {
+    {!["tagged", "saved", "tasks"].includes(tab) && (() => {
       const units = [...new Set(items.map((i) => i.unit_name).filter(Boolean))] as string[];
       if (units.length < 2) return null;
       const chip = chipStyle;
@@ -111,11 +111,13 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
       </div>;
     })()}
     <div className="body" style={{ padding: 0 }}>
+      {tab === "tasks" && <TaskList businessId={ctx.business_id} meId={members.find((m) => m.person_id === ctx.person_id)?.member_id ?? ""}
+        nameOf={(mid) => people[members.find((m) => m.member_id === mid)?.person_id ?? ""]?.name ?? "?"} onOpen={(c, m) => go({ s: "convo", id: c, focus: m })} />}
       {(tab === "tagged" || tab === "saved") && <Collection mode={tab} businessId={ctx.business_id}
         chatName={(c) => { const it = items.find((x) => x.channel_id === c); return it ? title(it) : "Discussion"; }}
         onOpen={(c, m) => go({ s: "convo", id: c, focus: m })} />}
-      {tab !== "tagged" && tab !== "saved" && loaded && items.length === 0 && !q && <p className="muted" style={{ padding: 16 }}>Aucune discussion. Touchez le bouton + ou cherchez une personne.</p>}
-      {tab !== "tagged" && tab !== "saved" && (() => {
+      {!["tagged", "saved", "tasks"].includes(tab) && loaded && items.length === 0 && !q && <p className="muted" style={{ padding: 16 }}>Aucune discussion. Touchez le bouton + ou cherchez une personne.</p>}
+      {!["tagged", "saved", "tasks"].includes(tab) && (() => {
         const nq = norm(q.trim());
         const base = tab === "unread" ? items.filter((i) => i.unread > 0) : tab === "groups" ? items.filter((i) => i.kind === "group") : items;
         const byUnit = unit ? base.filter((i) => i.unit_name === unit) : base;
@@ -181,8 +183,8 @@ function MediaView({ m }: { m: Message }) {
   </>);
 }
 
-function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, onRead, chats, focus }: {
-  ctx: Ctx; item: Item; people: Record<string, Person>; online: boolean; onQueue: () => void; onBack: () => void; onInfo: () => void; onRead: () => void; chats: Item[]; focus?: string;
+function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, onRead, members, chats, focus }: {
+  ctx: Ctx; item: Item; people: Record<string, Person>; online: boolean; onQueue: () => void; onBack: () => void; onInfo: () => void; onRead: () => void; members: { member_id: string; person_id: string }[]; chats: Item[]; focus?: string;
 }) {
   const [msgs, setMsgs] = useState<Message[]>([]);
   const [text, setText] = useState("");
@@ -284,6 +286,23 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, onRead, cha
     const { error } = await supabase.rpc("forward_message", { p_message: m.id, p_channel: channel });
     if (error) return setSheetNote("Impossible de transférer dans cette discussion.");
     setMenu(null); setNote("Message transféré.");
+  }
+  async function createTask(m: Message, title: string, assignee: string, due: string) {
+    setSheetNote("");
+    const { error } = await supabase.rpc("create_task", { p_message: m.id, p_title: title, p_assignee: assignee, p_due: due || null });
+    if (error) return setSheetNote("Impossible de créer la tâche.");
+    setMenu(null); setNote("Tâche créée. Retrouvez-la dans l'onglet Tâches.");
+  }
+  async function createReport(m: Message) {
+    setSheetNote("Lecture du message par l'IA…");
+    const { data, error } = await supabase.functions.invoke("extract", { body: { message_id: m.id } });
+    const r = (data ?? {}) as { drafts?: number; skipped?: string; error?: string };
+    if (error || r.error) return setSheetNote("L'IA n'est pas disponible pour le moment.");
+    setMenu(null);
+    setNote(r.drafts ? `${r.drafts} rapport${r.drafts > 1 ? "s" : ""} proposé${r.drafts > 1 ? "s" : ""} : à valider dans l'onglet Rapports.`
+      : r.skipped === "done" ? "Ce message a déjà été lu par l'IA : voir l'onglet Rapports."
+      : r.skipped === "direct" ? "Les discussions privées ne sont pas lues par l'IA."
+      : "L'IA n'a rien trouvé à enregistrer dans ce message.");
   }
   // Swipe a message to the right to reply to it (quoted above the message field); long-press or the three dots open every action, including tags.
   const [drag, setDrag] = useState<{ id: string; dx: number } | null>(null);
@@ -409,7 +428,9 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, onRead, cha
     {(() => { const m = msgs.find((x) => x.id === menu); if (!m) return null;
       return <MessageSheet key={m.id + tagOnly} m={m} tags={tags} activeTags={new Set((m.message_tag ?? []).map((t) => t.tag_id))}
         myReactions={new Set((m.message_reaction ?? []).filter((r) => r.member_id === me).map((r) => r.kind))}
-        saved={saved.has(m.id)} pinned={isPinned(m)} canForward={m.kind === "text"} note={sheetNote} tagOnly={tagOnly}
+        saved={saved.has(m.id)} pinned={isPinned(m)} canForward={m.kind === "text"} note={sheetNote}
+        assignees={members.map((x) => ({ id: x.member_id, name: people[x.person_id]?.name ?? "?" }))} meId={me ?? undefined}
+        onTask={(t, a, d) => createTask(m, t, a, d)} onReport={() => createReport(m)} tagOnly={tagOnly}
         receipts={m.person_id === ctx.person_id ? receipts.map((r) => ({ name: r.person_name, state: recState(r, tOf(m)) })) : undefined}
         targets={chats.filter((c) => c.channel_id !== id).map((c) => ({ id: c.channel_id, name: title(c) }))}
         onClose={() => setMenu(null)} onReply={() => { setReplyTo(m); setMenu(null); focusInput(); }}
