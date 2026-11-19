@@ -6,6 +6,8 @@ import type { Ctx } from "./Chats";
 
 type Row = { size: string; opening: number; production: number; sorties: number; closing_book: number; closing_physical: number; gap: number };
 type Sheet = { date: string; d: Date; rows: Row[]; trays: number };
+type Inv = { item: string; on_hand: number | null; pending: number; available: number | null };
+type Hold = { payment_record_id: string; customer: string | null; item: string; quantity: number; unit: string; created_at: string };
 type Pay = { at: Date; customer: string; amount: number; method: string };
 
 // Same colour for the same size everywhere (reference categorical palette, slots 1 to 3).
@@ -28,6 +30,7 @@ function Icon({ kind }: { kind: "warn" }) {
 
 export default function Business({ ctx }: { ctx: Ctx }) {
   const [sheets, setSheets] = useState<Sheet[]>([]); const [pays, setPays] = useState<Pay[]>([]);
+  const [inv, setInv] = useState<Inv[]>([]); const [holds, setHolds] = useState<Hold[]>([]); const [busyPay, setBusyPay] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false); const [sel, setSel] = useState<number | null>(null); const [table, setTable] = useState(false);
 
   const load = useCallback(async () => {
@@ -36,6 +39,11 @@ export default function Business({ ctx }: { ctx: Ctx }) {
       supabase.from("record_type").select("id, name").eq("business_id", ctx.business_id),
       supabase.from("current_record").select("record_type_id, fields, occurred_at").eq("business_id", ctx.business_id).gte("occurred_at", since).order("occurred_at"),
     ]);
+    const [{ data: iv }, { data: hs }] = await Promise.all([
+      supabase.rpc("inventory_summary", { p_business: ctx.business_id }),
+      supabase.from("stock_hold").select("payment_record_id, customer, item, quantity, unit, created_at").eq("business_id", ctx.business_id).eq("state", "pending_delivery").order("created_at", { ascending: false }),
+    ]);
+    setInv((iv as Inv[]) ?? []); setHolds((hs as Hold[]) ?? []);
     const name = new Map((rts ?? []).map((r) => [r.id, r.name]));
     const sh: Sheet[] = [], py: Pay[] = [];
     for (const r of rs ?? []) {
@@ -78,6 +86,29 @@ export default function Business({ ctx }: { ctx: Ctx }) {
           <Tile label="Encaissé (14 j)" value={n0(kpi.paid) + " FCFA"} />
         </div>
       </div>
+
+      {(inv.length > 0 || holds.length > 0) && <div className="card">
+        <h3 style={{ marginBottom: 2 }}>Inventaire</h3>
+        <div className="muted" style={{ marginBottom: 8 }}>Dernier stock approuvé, moins ce qui est payé et pas encore livré</div>
+        <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
+          <thead><tr><th style={{ textAlign: "left", padding: 4 }}>Article</th><th style={{ textAlign: "right", padding: 4 }}>En stock</th><th style={{ textAlign: "right", padding: 4 }}>En attente</th><th style={{ textAlign: "right", padding: 4 }}>Disponible</th></tr></thead>
+          <tbody>{inv.map((r) => <tr key={r.item} style={{ borderTop: "1px solid var(--line)" }}>
+            <td style={{ padding: 4, fontWeight: 700 }}>{r.item === "poulet" ? "Poulets" : `Œufs ${r.item}`}</td>
+            <td style={{ textAlign: "right", padding: 4 }}>{r.on_hand == null ? "—" : n0(r.on_hand)}</td>
+            <td style={{ textAlign: "right", padding: 4 }}>{n0(r.pending)}</td>
+            <td style={{ textAlign: "right", padding: 4, fontWeight: 700, color: r.available != null && r.available < 0 ? "var(--error)" : undefined }}>{r.available == null ? "—" : n0(r.available)}</td></tr>)}</tbody>
+        </table>
+        <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>Œufs comptés à l'unité ; les commandes en alvéoles (30 œufs) sont converties.</div>
+        {holds.length > 0 && <div style={{ marginTop: 12 }}>
+          <div className="muted" style={{ fontWeight: 600 }}>En attente de livraison</div>
+          {[...new Set(holds.map((h) => h.payment_record_id))].map((pid) => {
+            const hs = holds.filter((h) => h.payment_record_id === pid);
+            return <div className="fact" key={pid} style={{ alignItems: "center", gap: 8 }}>
+              <span style={{ flex: 1 }}><b>{hs[0].customer ?? "—"}</b><div className="muted">{hs.map((h) => `${h.quantity} ${h.item === "poulet" ? "poulets" : h.item}`).join(" · ")}</div></span>
+              <button disabled={busyPay === pid} style={{ minHeight: 40 }} onClick={async () => { setBusyPay(pid); await supabase.rpc("mark_delivered_payment", { p_payment: pid }); setBusyPay(null); load(); }}>Marquer livré</button>
+            </div>; })}
+        </div>}
+      </div>}
 
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>

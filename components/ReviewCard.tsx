@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { mediaUrl } from "@/lib/media";
 import { supabase, type Draft } from "@/lib/supabase";
+import PaymentLink from "./PaymentLink";
 
 type Row = Record<string, unknown>;
 type Fields = Record<string, unknown>;
@@ -76,6 +77,7 @@ export default function ReviewCard({ d, title, source, evidence, photo, onDone }
 }) {
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
   const [editing, setEditing] = useState(false);
+  const [paid, setPaid] = useState<string | null>(null); // id of the approved payment record, to link it next
   const [f, setF] = useState<Fields>(() => structuredClone(d.fields));
   const changed = JSON.stringify(f) !== JSON.stringify(d.fields);
   const stock = Array.isArray(f.stock) ? (f.stock as Row[]) : [];
@@ -92,8 +94,11 @@ export default function ReviewCard({ d, title, source, evidence, photo, onDone }
   }
   async function approve() {
     setBusy(true); setErr("");
-    const { error } = await supabase.rpc("approve_draft", { p_draft: d.id, p_fields: changed ? f : null });
-    setBusy(false); if (error) setErr("Impossible d'approuver (droits ?)."); else onDone();
+    const { data, error } = await supabase.rpc("approve_draft", { p_draft: d.id, p_fields: changed ? f : null });
+    setBusy(false);
+    if (error) setErr("Impossible d'approuver (droits ?).");
+    else if ("amount_fcfa" in f && data) setPaid(String(data)); // a payment: offer to link it to an order
+    else onDone();
   }
   async function reject() {
     setBusy(true); setErr("");
@@ -103,6 +108,8 @@ export default function ReviewCard({ d, title, source, evidence, photo, onDone }
 
   const scalars = Object.entries(f).filter(([, v]) => !Array.isArray(v));
   const tables = Object.entries(f).filter(([, v]) => Array.isArray(v) && (v as unknown[]).every((x) => typeof x === "object")) as [string, Row[]][];
+
+  if (paid) return <PaymentLink businessId={d.business_id} paymentId={paid} customer={String(f.customer ?? "")} onDone={onDone} />;
 
   return (
     <div className="card">
