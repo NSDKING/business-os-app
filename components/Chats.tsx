@@ -194,6 +194,7 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, chats, focu
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const press = useRef<number | undefined>(undefined);
   const focused = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     const { data } = await supabase.from("message").select("*, message_tag(tag_id), message_reaction(member_id,kind), message_pin(message_id)").eq("channel_id", id).order("sent_at").limit(300);
@@ -258,7 +259,7 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, chats, focu
     if (error) return setSheetNote("Impossible de transférer dans cette discussion.");
     setMenu(null); setNote("Message transféré.");
   }
-  // Swipe a message to the right to tag it; long-press or the three dots open every action.
+  // Swipe a message to the right to reply to it (quoted above the message field); long-press or the three dots open every action, including tags.
   const [drag, setDrag] = useState<{ id: string; dx: number } | null>(null);
   const [tagOnly, setTagOnly] = useState(false);
   const start = useRef<{ x: number; y: number } | null>(null);
@@ -285,7 +286,7 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, chats, focu
       window.clearTimeout(press.current);
       const done = dxRef.current >= 60 && start.current !== null;
       start.current = null; dxRef.current = 0; setDrag(null);
-      if (done) open(mid, true);
+      if (done) { const m = msgs.find((x) => x.id === mid); if (m) { setReplyTo(m); setTimeout(() => inputRef.current?.focus(), 0); } }
     },
     onPointerCancel: () => { window.clearTimeout(press.current); start.current = null; dxRef.current = 0; setDrag(null); },
     onContextMenu: (e: React.MouseEvent) => { e.preventDefault(); open(mid); },
@@ -350,7 +351,7 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, chats, focu
         const counts = REACTIONS.map((r) => ({ ...r, n: (m.message_reaction ?? []).filter((x) => x.kind === r.kind).length, mine: (m.message_reaction ?? []).some((x) => x.kind === r.kind && x.member_id === me) })).filter((r) => r.n > 0);
         const dragging = drag?.id === m.id ? drag.dx : 0;
         return (<div key={m.id} id={"m-" + m.id} style={{ position: "relative" }}>
-          {dragging > 0 && <div style={{ position: "absolute", left: 6, top: "50%", transform: "translateY(-50%)", opacity: Math.min(1, dragging / 60), color: "var(--primary)" }}><Icon name="tag" size={24} /></div>}
+          {dragging > 0 && <div style={{ position: "absolute", left: 6, top: "50%", transform: "translateY(-50%)", opacity: Math.min(1, dragging / 60), color: "var(--primary)" }}><Icon name="reply" size={24} /></div>}
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexDirection: mine ? "row-reverse" : "row", transform: dragging ? `translateX(${dragging}px)` : undefined, transition: dragging ? "none" : "transform .15s" }}>
           <Avatar name={ai ? "IA" : n} src={who?.avatar} size={32} />
           <div className={"bubble " + (mine ? "me " : "") + (ai ? "ai" : "")} style={{ margin: "6px 0", WebkitTouchCallout: "none", userSelect: "none", touchAction: "pan-y" }} {...bind(m.id)}>
@@ -396,7 +397,7 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, chats, focu
         <label aria-label="Envoyer une photo" style={{ minWidth: 44, minHeight: 44, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "var(--primary)" }}><Icon name="camera" size={26} />
           <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { pickPhoto(e.target.files?.[0]); e.target.value = ""; }} />
         </label>
-        <input placeholder="Message" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} />
+        <input ref={inputRef} placeholder="Message" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} />
         {text.trim() || !recorderSupported()
           ? <button className="primary" onClick={send}>Envoyer</button>
           : <button className="primary" onClick={startVoice} aria-label="Message vocal" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name="mic" /></button>}
