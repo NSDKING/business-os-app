@@ -23,11 +23,11 @@ export function TagPills({ ids, tags }: { ids: string[]; tags: Tag[] }) {
 
 export function MessageSheet(p: {
   m: Message; tags: Tag[]; activeTags: Set<string>; myReactions: Set<string>; saved: boolean; pinned: boolean;
-  targets: { id: string; name: string }[]; canForward: boolean; note: string;
+  targets: { id: string; name: string }[]; canForward: boolean; note: string; tagOnly?: boolean;
   onClose: () => void; onReply: () => void; onTag: (id: string) => void; onNewTag: (name: string) => void;
   onReact: (kind: string) => void; onSave: () => void; onPin: () => void; onForward: (channel: string) => void; onCopy: () => void;
 }) {
-  const [name, setName] = useState(""); const [fwd, setFwd] = useState(false);
+  const [name, setName] = useState(""); const [fwd, setFwd] = useState(false); const [more, setMore] = useState(!p.tagOnly);
   const row = (icon: Parameters<typeof Icon>[0]["name"], label: string, fn: () => void) => (
     <button key={label} onClick={fn} style={{ display: "flex", gap: 12, alignItems: "center", width: "100%", textAlign: "left", background: "none", border: 0, padding: "12px 4px", fontSize: 16, minHeight: 48 }}>
       <Icon name={icon} size={22} />{label}</button>);
@@ -40,11 +40,11 @@ export function MessageSheet(p: {
           {p.targets.map((t) => <button key={t.id} onClick={() => p.onForward(t.id)} style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: 0, borderBottom: "1px solid var(--line)", padding: "12px 4px", fontSize: 16 }}>{t.name}</button>)}
           <p><button onClick={() => setFwd(false)}>Retour</button></p>
         </>) : (<>
-          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          {more && <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
             {REACTIONS.map((r) => <button key={r.kind} onClick={() => p.onReact(r.kind)} aria-label={r.label}
               style={{ flex: 1, display: "flex", gap: 6, alignItems: "center", justifyContent: "center", padding: "10px 0", borderRadius: 12, border: "1px solid var(--line)", background: p.myReactions.has(r.kind) ? "var(--soft)" : "#fff", color: p.myReactions.has(r.kind) ? "var(--primary)" : "inherit" }}>
               <Icon name={r.icon} size={20} /> {r.label}</button>)}
-          </div>
+          </div>}
           <div className="muted" style={{ fontWeight: 600, marginBottom: 6 }}><Icon name="tag" size={16} /> Étiquettes</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {p.tags.map((t) => { const on = p.activeTags.has(t.id); return (
@@ -54,13 +54,14 @@ export function MessageSheet(p: {
             <input placeholder="Nouvelle étiquette" value={name} maxLength={30} onChange={(e) => setName(e.target.value)} style={{ flex: 1 }} />
             <button disabled={!name.trim()} onClick={() => { p.onNewTag(name.trim()); setName(""); }}>Ajouter</button>
           </div>
-          <div style={{ borderTop: "1px solid var(--line)", marginTop: 8 }}>
+          {!more && <p><button onClick={() => setMore(true)}>Plus d'actions</button></p>}
+          {more && <div style={{ borderTop: "1px solid var(--line)", marginTop: 8 }}>
             {row("reply", "Répondre", p.onReply)}
             {row("bookmark", p.saved ? "Retirer des enregistrés" : "Enregistrer", p.onSave)}
             {row("pin", p.pinned ? "Détacher" : "Épingler dans la discussion", p.onPin)}
             {p.canForward && row("forward", "Transférer", () => setFwd(true))}
             {p.m.kind === "text" && row("copy", "Copier le texte", p.onCopy)}
-          </div>
+          </div>}
         </>)}
         {p.note && <p style={{ color: "var(--error)" }}>{p.note}</p>}
       </div>

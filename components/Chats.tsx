@@ -251,10 +251,31 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, chats, focu
     if (error) return setSheetNote("Impossible de transférer dans cette discussion.");
     setMenu(null); setNote("Message transféré.");
   }
+  // Swipe a message to the right to tag it; long-press or the three dots open every action.
+  const [drag, setDrag] = useState<{ id: string; dx: number } | null>(null);
+  const [tagOnly, setTagOnly] = useState(false);
+  const start = useRef<{ x: number; y: number } | null>(null);
+  const dxRef = useRef(0);
+  const open = (mid: string, only = false) => { setSheetNote(""); setTagOnly(only); setMenu(mid); };
   const bind = (mid: string) => ({
-    onTouchStart: () => { press.current = window.setTimeout(() => { setSheetNote(""); setMenu(mid); }, 450); },
-    onTouchEnd: () => window.clearTimeout(press.current), onTouchMove: () => window.clearTimeout(press.current),
-    onContextMenu: (e: React.MouseEvent) => { e.preventDefault(); setSheetNote(""); setMenu(mid); },
+    onTouchStart: (e: React.TouchEvent) => {
+      const t = e.touches[0]; start.current = { x: t.clientX, y: t.clientY }; dxRef.current = 0;
+      press.current = window.setTimeout(() => { start.current = null; open(mid); }, 450);
+    },
+    onTouchMove: (e: React.TouchEvent) => {
+      const s0 = start.current; if (!s0) return;
+      const t = e.touches[0]; const dx = t.clientX - s0.x, dy = t.clientY - s0.y;
+      if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { window.clearTimeout(press.current); start.current = null; dxRef.current = 0; setDrag(null); return; }
+      if (dx > 8) { window.clearTimeout(press.current); dxRef.current = Math.min(dx, 90); setDrag({ id: mid, dx: dxRef.current }); }
+    },
+    onTouchEnd: () => {
+      window.clearTimeout(press.current);
+      const done = dxRef.current >= 60 && start.current !== null;
+      start.current = null; dxRef.current = 0; setDrag(null);
+      if (done) open(mid, true);
+    },
+    onTouchCancel: () => { window.clearTimeout(press.current); start.current = null; dxRef.current = 0; setDrag(null); },
+    onContextMenu: (e: React.MouseEvent) => { e.preventDefault(); open(mid); },
   });
 
   async function send() {
@@ -314,12 +335,15 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, chats, focu
         const who = (m.person_id && people[m.person_id]) || null; const n = who?.name ?? m.sender_label;
         const quoted = m.reply_to ? msgs.find((x) => x.id === m.reply_to) : null;
         const counts = REACTIONS.map((r) => ({ ...r, n: (m.message_reaction ?? []).filter((x) => x.kind === r.kind).length, mine: (m.message_reaction ?? []).some((x) => x.kind === r.kind && x.member_id === me) })).filter((r) => r.n > 0);
-        return (<div key={m.id} id={"m-" + m.id} style={{ display: "flex", gap: 8, alignItems: "flex-end", flexDirection: mine ? "row-reverse" : "row" }}>
+        const dragging = drag?.id === m.id ? drag.dx : 0;
+        return (<div key={m.id} id={"m-" + m.id} style={{ position: "relative" }}>
+          {dragging > 0 && <div style={{ position: "absolute", left: 6, top: "50%", transform: "translateY(-50%)", opacity: Math.min(1, dragging / 60), color: "var(--primary)" }}><Icon name="tag" size={24} /></div>}
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexDirection: mine ? "row-reverse" : "row", transform: dragging ? `translateX(${dragging}px)` : undefined, transition: dragging ? "none" : "transform .15s" }}>
           <Avatar name={ai ? "IA" : n} src={who?.avatar} size={32} />
-          <div className={"bubble " + (mine ? "me " : "") + (ai ? "ai" : "")} style={{ margin: "6px 0", WebkitTouchCallout: "none", userSelect: "none" }} {...bind(m.id)}>
+          <div className={"bubble " + (mine ? "me " : "") + (ai ? "ai" : "")} style={{ margin: "6px 0", WebkitTouchCallout: "none", userSelect: "none", touchAction: "pan-y" }} {...bind(m.id)}>
             <div className="who" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
               <span>{ai ? "Assistant" : n}</span>
-              <button onClick={() => { setSheetNote(""); setMenu(m.id); }} aria-label="Actions du message" style={{ border: 0, background: "none", padding: 0, minWidth: 28, minHeight: 20, color: "var(--muted)" }}><Icon name="more" size={18} /></button>
+              <button onClick={() => open(m.id)} aria-label="Actions du message" style={{ border: 0, background: "none", padding: 0, minWidth: 28, minHeight: 20, color: "var(--muted)" }}><Icon name="more" size={18} /></button>
             </div>
             {m.forwarded_from && <div className="muted" style={{ fontSize: 12, marginBottom: 2 }}><Icon name="forward" size={13} /> Transféré</div>}
             {m.reply_to && <div onClick={() => jump(m.reply_to!)} style={{ borderLeft: "3px solid var(--primary)", background: "rgba(0,0,0,.05)", padding: "4px 8px", borderRadius: 6, marginBottom: 4, fontSize: 13, cursor: "pointer" }}>
@@ -331,7 +355,7 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, chats, focu
               {counts.map((r) => <button key={r.kind} onClick={() => react(m, r.kind)} aria-label={r.label} style={{ display: "flex", alignItems: "center", gap: 3, padding: "2px 8px", minHeight: 26, borderRadius: 12, border: "1px solid var(--line)", background: r.mine ? "var(--soft)" : "#fff", color: r.mine ? "var(--primary)" : "inherit", fontSize: 12 }}><Icon name={r.icon} size={14} />{r.n}</button>)}
             </div>}
             <div className="t">{isPinned(m) && <Icon name="pin" size={12} />} {saved.has(m.id) && <Icon name="bookmark" size={12} />} {new Date(m.sent_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</div>
-          </div></div>);
+          </div></div></div>);
       })}
       <div ref={end} />
     </div>
@@ -340,9 +364,9 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, chats, focu
       <button onClick={() => setReplyTo(null)} aria-label="Annuler la réponse" style={{ border: 0, background: "none", minWidth: 36 }}><Icon name="close" size={18} /></button></div>}
     {note && <div className="muted" style={{ padding: "6px 16px", background: "#fff", color: note === "Message transféré." ? "var(--primary)" : "var(--error)" }}>{note}</div>}
     {(() => { const m = msgs.find((x) => x.id === menu); if (!m) return null;
-      return <MessageSheet m={m} tags={tags} activeTags={new Set((m.message_tag ?? []).map((t) => t.tag_id))}
+      return <MessageSheet key={m.id + tagOnly} m={m} tags={tags} activeTags={new Set((m.message_tag ?? []).map((t) => t.tag_id))}
         myReactions={new Set((m.message_reaction ?? []).filter((r) => r.member_id === me).map((r) => r.kind))}
-        saved={saved.has(m.id)} pinned={isPinned(m)} canForward={m.kind === "text"} note={sheetNote}
+        saved={saved.has(m.id)} pinned={isPinned(m)} canForward={m.kind === "text"} note={sheetNote} tagOnly={tagOnly}
         targets={chats.filter((c) => c.channel_id !== id).map((c) => ({ id: c.channel_id, name: title(c) }))}
         onClose={() => setMenu(null)} onReply={() => { setReplyTo(m); setMenu(null); }}
         onTag={(t) => toggleTag(m, t)} onNewTag={(nm) => newTag(m, nm)} onReact={(k) => react(m, k)}
