@@ -4,6 +4,7 @@ import { supabase, type Channel, type Draft, type Message } from "@/lib/supabase
 import { enqueue, flushQueue, readQueue } from "@/lib/queue";
 import ReviewCard from "@/components/ReviewCard";
 import Approvers from "@/components/Approvers";
+import Compliance from "@/components/Compliance";
 import Business from "@/components/Business";
 import Chats from "@/components/Chats";
 import Avatar from "@/components/Avatar";
@@ -205,6 +206,7 @@ function Settings({ ctx }: { ctx: Ctx }) {
           </div>))}
       </div>
       <Approvers businessId={ctx.business_id} />
+      <Compliance businessId={ctx.business_id} />
       <div className="card"><h3>Inviter quelqu'un</h3>
         <p><input placeholder="Nom de la personne" value={name} onChange={(e) => setName(e.target.value)} /></p>
         <button className="primary big" disabled={!name.trim()} onClick={invite}>Créer le lien</button>

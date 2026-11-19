@@ -428,6 +428,7 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, onRead, mem
       {msgs.length === 0 && <p className="muted">Aucun message. Écrivez le premier.</p>}
       {msgs.map((m) => {
         const mine = m.person_id === ctx.person_id; const ai = m.sender_label === "Assistant";
+        if (m.kind === "system") return <div key={m.id} id={"m-" + m.id} style={{ margin: "10px 24px", padding: "8px 12px", borderRadius: 12, background: "var(--warn-bg)", textAlign: "center", fontSize: 13 }}>{m.text}</div>;
         const who = (m.person_id && people[m.person_id]) || null; const n = who?.name ?? m.sender_label;
         const quoted = m.reply_to ? msgs.find((x) => x.id === m.reply_to) : null;
         const counts = REACTIONS.map((r) => ({ ...r, n: (m.message_reaction ?? []).filter((x) => x.kind === r.kind).length, mine: (m.message_reaction ?? []).some((x) => x.kind === r.kind && x.member_id === me) })).filter((r) => r.n > 0);
