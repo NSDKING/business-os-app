@@ -6,6 +6,7 @@ import { dataUrlToBlob, extOf } from "./media";
 export type Pending = {
   id: string; business_id: string; channel_id: string; person_id: string;
   sender_label: string; text: string; sent_at: string;
+  reply_to?: string | null;
   kind?: "text" | "image" | "audio"; media?: string; seconds?: number; // media = the file as a data URL until it is sent
 };
 const KEY = "bos.queue.v1";
@@ -32,7 +33,7 @@ export async function flushQueue(): Promise<string[]> {
     const { error } = await supabase.from("message").insert({
       id: p.id, business_id: p.business_id, channel_id: p.channel_id, source_id: p.id,
       sent_at: p.sent_at, sender_label: p.sender_label, saved_contact: true, person_id: p.person_id,
-      kind, text: p.text, raw: kind === "audio" ? `audio:${p.seconds ?? 0}` : p.text || kind, attachment,
+      kind, text: p.text, raw: kind === "audio" ? `audio:${p.seconds ?? 0}` : p.text || kind, attachment, reply_to: p.reply_to ?? null,
     });
     if (!error || error.code === "23505") {
       sent.push(p.id); // 23505 = already there

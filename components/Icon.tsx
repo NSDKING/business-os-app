@@ -8,6 +8,16 @@ const P: Record<string, React.ReactNode> = {
   mic: <><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5.5 11.5a6.5 6.5 0 0013 0M12 18v3" /></>,
   group: <><circle cx="9" cy="9" r="3" /><path d="M3.5 19a5.5 5.5 0 0111 0" /><circle cx="17" cy="10" r="2.5" /><path d="M16 14.2a4.5 4.5 0 015 4.3" /></>,
   send: <path d="M4 12l16-8-6 16-2.5-6.5z" />,
+  more: <><circle cx="12" cy="5" r="1.4" /><circle cx="12" cy="12" r="1.4" /><circle cx="12" cy="19" r="1.4" /></>,
+  reply: <path d="M10 6L4 12l6 6M4 12h9a7 7 0 017 7" />,
+  bookmark: <path d="M6 4h12v17l-6-4-6 4z" />,
+  pin: <path d="M9 4h6l-1 6 3 3H7l3-3zM12 13v8" />,
+  forward: <path d="M14 6l6 6-6 6M20 12h-9a7 7 0 00-7 7" />,
+  copy: <><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2" /></>,
+  tag: <><path d="M3 12V4h8l10 10-8 8z" /><circle cx="7.5" cy="8.5" r="1.2" /></>,
+  thumb: <path d="M7 11v9H4v-9zM7 11l4-7c1.5 0 2.5 1 2 2.5L12.5 9H19a1.5 1.5 0 011.5 1.8l-1.3 7.5A2 2 0 0117.2 20H7" />,
+  check: <path d="M5 12.5l4.5 4.5L19 7.5" />,
+  alert: <><path d="M12 4l9 16H3z" /><path d="M12 10v4M12 17v.5" /></>,
 };
 export default function Icon({ name, size = 22 }: { name: keyof typeof P; size?: number }) {
   return (

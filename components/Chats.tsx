@@ -5,6 +5,7 @@ import { supabase, type Message } from "@/lib/supabase";
 import { enqueue, flushQueue } from "@/lib/queue";
 import Avatar from "./Avatar";
 import Icon from "./Icon";
+import { Collection, MessageSheet, TagPills, REACTIONS, snippet, type Tag } from "./MessageTools";
 
 export type Ctx = { business_id: string; business: string; person_id: string; name: string };
 type Item = {
@@ -13,8 +14,9 @@ type Item = {
   last_sender: string | null; unread: number; unit_name?: string | null;
 };
 type Person = { name: string; avatar: string | null };
-type Screen = { s: "list" } | { s: "new" } | { s: "convo"; id: string } | { s: "info"; id: string };
+type Screen = { s: "list" } | { s: "new" } | { s: "convo"; id: string; focus?: string } | { s: "info"; id: string };
 
+const chipStyle = (on: boolean) => ({ flex: "none" as const, padding: "6px 12px", borderRadius: 16, border: "1px solid var(--line)", background: on ? "var(--primary)" : "#fff", color: on ? "#fff" : "inherit", fontSize: 13, cursor: "pointer" });
 const norm = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 function SearchBox({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
   return (
@@ -49,6 +51,7 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
   const [loaded, setLoaded] = useState(false);
   const [q, setQ] = useState("");
   const [unit, setUnit] = useState<string>("");
+  const [tab, setTab] = useState<"all" | "unread" | "groups" | "tagged" | "saved">("all");
   const [searchErr, setSearchErr] = useState("");
 
   const loadList = useCallback(async () => {
@@ -79,7 +82,7 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
   if ((screen.s === "convo" || screen.s === "info") && cur) {
     return screen.s === "info"
       ? <GroupInfo item={cur} people={people} onBack={() => go({ s: "convo", id: cur.channel_id })} onRenamed={loadList} />
-      : <Convo ctx={ctx} item={cur} people={people} online={online} onQueue={onQueue}
+      : <Convo ctx={ctx} item={cur} people={people} online={online} onQueue={onQueue} chats={items} focus={screen.s === "convo" ? screen.focus : undefined}
           onBack={() => go({ s: "list" })} onInfo={() => cur.kind === "group" && go({ s: "info", id: cur.channel_id })} />;
   }
 
@@ -87,20 +90,28 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
     <div className="top"><span>Discussions</span>
       <button className="primary" style={{ minWidth: 44 }} onClick={() => go({ s: "new" })} aria-label="Nouvelle discussion"><Icon name="plus" /></button></div>
     <SearchBox value={q} onChange={setQ} placeholder="Rechercher une personne ou un groupe" />
-    {(() => {
+    <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "8px 16px", background: "#fff", borderBottom: "1px solid var(--line)" }}>
+      {([["all", "Tout"], ["unread", "Non lus"], ["groups", "Groupes"], ["tagged", "Étiquetés"], ["saved", "Enregistrés"]] as const).map(([k, l]) =>
+        <button key={k} style={chipStyle(tab === k)} onClick={() => setTab(k)}>{l}</button>)}
+    </div>
+    {tab !== "tagged" && tab !== "saved" && (() => {
       const units = [...new Set(items.map((i) => i.unit_name).filter(Boolean))] as string[];
       if (units.length < 2) return null;
-      const chip = (on: boolean) => ({ flex: "none" as const, padding: "6px 12px", borderRadius: 16, border: "1px solid var(--line)", background: on ? "var(--primary)" : "#fff", color: on ? "#fff" : "inherit", fontSize: 13, cursor: "pointer" });
+      const chip = chipStyle;
       return <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "8px 16px", background: "#fff", borderBottom: "1px solid var(--line)" }}>
         <button style={chip(!unit)} onClick={() => setUnit("")}>Tout</button>
         {units.map((u) => <button key={u} style={chip(unit === u)} onClick={() => setUnit(unit === u ? "" : u)}>{u}</button>)}
       </div>;
     })()}
     <div className="body" style={{ padding: 0 }}>
-      {loaded && items.length === 0 && !q && <p className="muted" style={{ padding: 16 }}>Aucune discussion. Touchez le bouton + ou cherchez une personne.</p>}
-      {(() => {
+      {(tab === "tagged" || tab === "saved") && <Collection mode={tab} businessId={ctx.business_id}
+        chatName={(c) => { const it = items.find((x) => x.channel_id === c); return it ? title(it) : "Discussion"; }}
+        onOpen={(c, m) => go({ s: "convo", id: c, focus: m })} />}
+      {tab !== "tagged" && tab !== "saved" && loaded && items.length === 0 && !q && <p className="muted" style={{ padding: 16 }}>Aucune discussion. Touchez le bouton + ou cherchez une personne.</p>}
+      {tab !== "tagged" && tab !== "saved" && (() => {
         const nq = norm(q.trim());
-        const byUnit = unit ? items.filter((i) => i.unit_name === unit) : items;
+        const base = tab === "unread" ? items.filter((i) => i.unread > 0) : tab === "groups" ? items.filter((i) => i.kind === "group") : items;
+        const byUnit = unit ? base.filter((i) => i.unit_name === unit) : base;
         const shown = nq ? byUnit.filter((i) => norm(title(i)).includes(nq) || norm(i.last_text ?? "").includes(nq)) : byUnit;
         const haveDm = new Set(items.filter((i) => i.kind === "direct").map((i) => i.other_person));
         const found = nq ? members.filter((m) => m.person_id !== ctx.person_id && !haveDm.has(m.person_id) && norm(people[m.person_id]?.name ?? "").includes(nq)) : [];
@@ -158,8 +169,8 @@ function MediaView({ m }: { m: Message }) {
   </>);
 }
 
-function Convo({ ctx, item, people, online, onQueue, onBack, onInfo }: {
-  ctx: Ctx; item: Item; people: Record<string, Person>; online: boolean; onQueue: () => void; onBack: () => void; onInfo: () => void;
+function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, chats, focus }: {
+  ctx: Ctx; item: Item; people: Record<string, Person>; online: boolean; onQueue: () => void; onBack: () => void; onInfo: () => void; chats: Item[]; focus?: string;
 }) {
   const [msgs, setMsgs] = useState<Message[]>([]);
   const [text, setText] = useState("");
@@ -168,27 +179,96 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo }: {
   const rec = useRef<Recording | null>(null);
   const [recording, setRecording] = useState<number | null>(null); // seconds so far, null = not recording
   const [note, setNote] = useState("");
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [saved, setSaved] = useState<Set<string>>(new Set());
+  const [me, setMe] = useState<string | null>(null); // my member id
+  const [menu, setMenu] = useState<string | null>(null);
+  const [sheetNote, setSheetNote] = useState("");
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const press = useRef<number | undefined>(undefined);
+  const focused = useRef(false);
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.from("message").select("*, message_tag(tag_id), message_reaction(member_id,kind), message_pin(message_id)").eq("channel_id", id).order("sent_at").limit(300);
+    setMsgs((data as Message[]) ?? []);
+  }, [id]);
+  useEffect(() => {
+    supabase.from("tag").select("id,name,color").eq("business_id", ctx.business_id).order("name").then(({ data }) => setTags((data as Tag[]) ?? []));
+    supabase.from("saved_message").select("message_id").then(({ data }) => setSaved(new Set((data ?? []).map((r) => r.message_id as string))));
+    supabase.from("member").select("id").eq("business_id", ctx.business_id).eq("person_id", ctx.person_id).maybeSingle().then(({ data }) => setMe(data?.id ?? null));
+  }, [ctx.business_id, ctx.person_id]);
 
   useEffect(() => {
-    supabase.from("message").select("*").eq("channel_id", id).order("sent_at").limit(300).then(({ data }) => { setMsgs(data ?? []); supabase.rpc("mark_read", { p_channel: id }); });
+    load().then(() => { supabase.rpc("mark_read", { p_channel: id }); });
     const sub = supabase.channel("msg-" + id)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "message", filter: `channel_id=eq.${id}` },
         (p) => { setMsgs((m) => (m.some((x) => x.id === (p.new as Message).id) ? m : [...m, p.new as Message])); supabase.rpc("mark_read", { p_channel: id }); })
       .subscribe();
     return () => { supabase.removeChannel(sub); };
-  }, [id]);
-  useEffect(() => { end.current?.scrollIntoView(); }, [msgs]);
+  }, [id, load]);
+  useEffect(() => {
+    if (focus && !focused.current) { const el = document.getElementById("m-" + focus); if (el) { focused.current = true; el.scrollIntoView({ block: "center" }); return; } }
+    if (!focus || focused.current) end.current?.scrollIntoView();
+  }, [msgs, focus]);
+  const jump = (mid: string) => document.getElementById("m-" + mid)?.scrollIntoView({ block: "center", behavior: "smooth" });
+  const isPinned = (m: Message) => (Array.isArray(m.message_pin) ? m.message_pin.length > 0 : !!m.message_pin);
+  const patch = (mid: string, f: (m: Message) => Message) => setMsgs((ms) => ms.map((x) => (x.id === mid ? f(x) : x)));
+  const fail = () => { setSheetNote("Action impossible pour le moment. Réessayez."); load(); };
+
+  async function toggleTag(m: Message, tid: string) {
+    setSheetNote("");
+    const on = (m.message_tag ?? []).some((t) => t.tag_id === tid);
+    patch(m.id, (x) => ({ ...x, message_tag: on ? (x.message_tag ?? []).filter((t) => t.tag_id !== tid) : [...(x.message_tag ?? []), { tag_id: tid }] }));
+    const { error } = await supabase.rpc("toggle_tag", { p_message: m.id, p_tag: tid }); if (error) fail();
+  }
+  async function newTag(m: Message, name: string) {
+    setSheetNote("");
+    const { data, error } = await supabase.rpc("create_tag", { p_business: ctx.business_id, p_name: name });
+    if (error || !data) return fail();
+    const tid = data as string;
+    setTags((t) => (t.some((x) => x.id === tid) ? t : [...t, { id: tid, name, color: "#6b7280" }].sort((a, b) => a.name.localeCompare(b.name))));
+    if (!(m.message_tag ?? []).some((t) => t.tag_id === tid)) await toggleTag(m, tid);
+  }
+  async function react(m: Message, kind: string) {
+    if (!me) return; setSheetNote("");
+    const on = (m.message_reaction ?? []).some((r) => r.member_id === me && r.kind === kind);
+    patch(m.id, (x) => ({ ...x, message_reaction: on ? (x.message_reaction ?? []).filter((r) => !(r.member_id === me && r.kind === kind)) : [...(x.message_reaction ?? []), { member_id: me, kind }] }));
+    const { error } = await supabase.rpc("toggle_reaction", { p_message: m.id, p_kind: kind }); if (error) fail();
+  }
+  async function toggleSave(m: Message) {
+    setSheetNote(""); const on = saved.has(m.id);
+    setSaved((s) => { const n = new Set(s); if (on) n.delete(m.id); else n.add(m.id); return n; });
+    const { error } = await supabase.rpc("toggle_saved", { p_message: m.id }); if (error) fail();
+  }
+  async function togglePin(m: Message) {
+    setSheetNote(""); const on = isPinned(m);
+    patch(m.id, (x) => ({ ...x, message_pin: on ? null : { message_id: m.id } }));
+    const { error } = await supabase.rpc("toggle_pin", { p_message: m.id }); if (error) fail();
+  }
+  async function forward(m: Message, channel: string) {
+    setSheetNote("");
+    const { error } = await supabase.rpc("forward_message", { p_message: m.id, p_channel: channel });
+    if (error) return setSheetNote("Impossible de transférer dans cette discussion.");
+    setMenu(null); setNote("Message transféré.");
+  }
+  const bind = (mid: string) => ({
+    onTouchStart: () => { press.current = window.setTimeout(() => { setSheetNote(""); setMenu(mid); }, 450); },
+    onTouchEnd: () => window.clearTimeout(press.current), onTouchMove: () => window.clearTimeout(press.current),
+    onContextMenu: (e: React.MouseEvent) => { e.preventDefault(); setSheetNote(""); setMenu(mid); },
+  });
 
   async function send() {
     const t = text.trim(); if (!t) return; setText("");
-    const p = { id: crypto.randomUUID(), business_id: ctx.business_id, channel_id: id, person_id: ctx.person_id, sender_label: ctx.name, text: t, sent_at: new Date().toISOString() };
+    const p = { id: crypto.randomUUID(), business_id: ctx.business_id, channel_id: id, person_id: ctx.person_id, sender_label: ctx.name, text: t, sent_at: new Date().toISOString(), reply_to: replyTo?.id ?? null };
+    setReplyTo(null);
     setMsgs((m) => [...m, { ...p, kind: "text", attachment: null }]);
     enqueue(p); onQueue();
     if (online) { await flushQueue(); onQueue(); }
   }
 
   async function sendMedia(kind: "image" | "audio", media: string, seconds?: number) {
-    const p = { id: crypto.randomUUID(), business_id: ctx.business_id, channel_id: id, person_id: ctx.person_id, sender_label: ctx.name, text: "", sent_at: new Date().toISOString(), kind, media, seconds };
+    const p = { id: crypto.randomUUID(), business_id: ctx.business_id, channel_id: id, person_id: ctx.person_id, sender_label: ctx.name, text: "", sent_at: new Date().toISOString(), kind, media, seconds, reply_to: replyTo?.id ?? null };
+    setReplyTo(null);
     setMsgs((m) => [...m, { ...p, kind, attachment: media, text: "" }]);
     enqueue(p); onQueue();
     if (online) { await flushQueue(); onQueue(); }
@@ -224,21 +304,50 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo }: {
         <div><div>{name}</div>{item.kind === "group" && <div className="muted" style={{ fontSize: 12, fontWeight: 400 }}>Touchez pour les infos du groupe</div>}</div>
       </div>
     </div>
+    {(() => { const pins = msgs.filter(isPinned); const last = pins[pins.length - 1];
+      return last ? <div onClick={() => jump(last.id)} style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 16px", background: "var(--soft)", borderBottom: "1px solid var(--line)", cursor: "pointer", fontSize: 14 }}>
+        <Icon name="pin" size={16} /><span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><b>{last.sender_label}</b> : {snippet(last)}</span>{pins.length > 1 && <span className="muted">{pins.length}</span>}</div> : null; })()}
     <div className="body">
       {msgs.length === 0 && <p className="muted">Aucun message. Écrivez le premier.</p>}
       {msgs.map((m) => {
         const mine = m.person_id === ctx.person_id; const ai = m.sender_label === "Assistant";
         const who = (m.person_id && people[m.person_id]) || null; const n = who?.name ?? m.sender_label;
-        return (<div key={m.id} style={{ display: "flex", gap: 8, alignItems: "flex-end", flexDirection: mine ? "row-reverse" : "row" }}>
+        const quoted = m.reply_to ? msgs.find((x) => x.id === m.reply_to) : null;
+        const counts = REACTIONS.map((r) => ({ ...r, n: (m.message_reaction ?? []).filter((x) => x.kind === r.kind).length, mine: (m.message_reaction ?? []).some((x) => x.kind === r.kind && x.member_id === me) })).filter((r) => r.n > 0);
+        return (<div key={m.id} id={"m-" + m.id} style={{ display: "flex", gap: 8, alignItems: "flex-end", flexDirection: mine ? "row-reverse" : "row" }}>
           <Avatar name={ai ? "IA" : n} src={who?.avatar} size={32} />
-          <div className={"bubble " + (mine ? "me " : "") + (ai ? "ai" : "")} style={{ margin: "6px 0" }}>
-            <div className="who">{ai ? "Assistant" : n}</div>{(m.kind === "image" || m.kind === "audio") ? <MediaView m={m} /> : <div>{m.text}</div>}
-            <div className="t">{new Date(m.sent_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</div>
+          <div className={"bubble " + (mine ? "me " : "") + (ai ? "ai" : "")} style={{ margin: "6px 0", WebkitTouchCallout: "none", userSelect: "none" }} {...bind(m.id)}>
+            <div className="who" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              <span>{ai ? "Assistant" : n}</span>
+              <button onClick={() => { setSheetNote(""); setMenu(m.id); }} aria-label="Actions du message" style={{ border: 0, background: "none", padding: 0, minWidth: 28, minHeight: 20, color: "var(--muted)" }}><Icon name="more" size={18} /></button>
+            </div>
+            {m.forwarded_from && <div className="muted" style={{ fontSize: 12, marginBottom: 2 }}><Icon name="forward" size={13} /> Transféré</div>}
+            {m.reply_to && <div onClick={() => jump(m.reply_to!)} style={{ borderLeft: "3px solid var(--primary)", background: "rgba(0,0,0,.05)", padding: "4px 8px", borderRadius: 6, marginBottom: 4, fontSize: 13, cursor: "pointer" }}>
+              <b>{quoted?.sender_label ?? "Message"}</b>
+              <div className="muted" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220 }}>{quoted ? snippet(quoted) : "Message plus ancien"}</div></div>}
+            {(m.kind === "image" || m.kind === "audio") ? <MediaView m={m} /> : <div>{m.text}</div>}
+            <TagPills ids={(m.message_tag ?? []).map((t) => t.tag_id)} tags={tags} />
+            {counts.length > 0 && <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+              {counts.map((r) => <button key={r.kind} onClick={() => react(m, r.kind)} aria-label={r.label} style={{ display: "flex", alignItems: "center", gap: 3, padding: "2px 8px", minHeight: 26, borderRadius: 12, border: "1px solid var(--line)", background: r.mine ? "var(--soft)" : "#fff", color: r.mine ? "var(--primary)" : "inherit", fontSize: 12 }}><Icon name={r.icon} size={14} />{r.n}</button>)}
+            </div>}
+            <div className="t">{isPinned(m) && <Icon name="pin" size={12} />} {saved.has(m.id) && <Icon name="bookmark" size={12} />} {new Date(m.sent_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</div>
           </div></div>);
       })}
       <div ref={end} />
     </div>
-    {note && <div className="muted" style={{ padding: "6px 16px", background: "#fff", color: "var(--error)" }}>{note}</div>}
+    {replyTo && <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "6px 16px", background: "#fff", borderTop: "1px solid var(--line)" }}>
+      <Icon name="reply" size={18} /><div style={{ flex: 1, minWidth: 0, borderLeft: "3px solid var(--primary)", paddingLeft: 8, fontSize: 13 }}><b>{replyTo.sender_label}</b><div className="muted" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{snippet(replyTo)}</div></div>
+      <button onClick={() => setReplyTo(null)} aria-label="Annuler la réponse" style={{ border: 0, background: "none", minWidth: 36 }}><Icon name="close" size={18} /></button></div>}
+    {note && <div className="muted" style={{ padding: "6px 16px", background: "#fff", color: note === "Message transféré." ? "var(--primary)" : "var(--error)" }}>{note}</div>}
+    {(() => { const m = msgs.find((x) => x.id === menu); if (!m) return null;
+      return <MessageSheet m={m} tags={tags} activeTags={new Set((m.message_tag ?? []).map((t) => t.tag_id))}
+        myReactions={new Set((m.message_reaction ?? []).filter((r) => r.member_id === me).map((r) => r.kind))}
+        saved={saved.has(m.id)} pinned={isPinned(m)} canForward={m.kind === "text"} note={sheetNote}
+        targets={chats.filter((c) => c.channel_id !== id).map((c) => ({ id: c.channel_id, name: title(c) }))}
+        onClose={() => setMenu(null)} onReply={() => { setReplyTo(m); setMenu(null); }}
+        onTag={(t) => toggleTag(m, t)} onNewTag={(nm) => newTag(m, nm)} onReact={(k) => react(m, k)}
+        onSave={() => toggleSave(m)} onPin={() => togglePin(m)} onForward={(c) => forward(m, c)}
+        onCopy={() => { navigator.clipboard?.writeText(m.text).catch(() => {}); setMenu(null); }} />; })()}
     {recording !== null ? (
       <div className="composer" style={{ alignItems: "center" }}>
         <button onClick={() => finishVoice(false)} aria-label="Annuler" style={{ minWidth: 48, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name="close" /></button>

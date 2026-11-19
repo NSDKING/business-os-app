@@ -10,6 +10,8 @@ export type Channel = { id: string; business_id: string; unit_id: string; name: 
 export type Message = {
   id: string; business_id: string; channel_id: string; sent_at: string;
   sender_label: string; person_id: string | null; kind: string; text: string; attachment: string | null; raw?: string;
+  reply_to?: string | null; forwarded_from?: string | null;
+  message_tag?: { tag_id: string }[]; message_reaction?: { member_id: string; kind: string }[]; message_pin?: unknown;
 };
 export type Draft = {
   id: string; business_id: string; record_type_id: string; fields: Record<string, unknown>;
