@@ -17,7 +17,7 @@ export function TagPills({ ids, tags }: { ids: string[]; tags: Tag[] }) {
   const list = ids.map((id) => tags.find((t) => t.id === id)).filter(Boolean) as Tag[];
   if (!list.length) return null;
   return <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
-    {list.map((t) => <span key={t.id} style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10, color: t.color, border: `1px solid ${t.color}`, background: "#fff" }}>{t.name}</span>)}
+    {list.map((t) => <span key={t.id} style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10, color: t.color, border: `1px solid ${t.color}`, background: "var(--surface)" }}>{t.name}</span>)}
   </div>;
 }
 
@@ -33,7 +33,7 @@ export function MessageSheet(p: {
       <Icon name={icon} size={22} />{label}</button>);
   return (
     <div onClick={p.onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 60, display: "flex", alignItems: "flex-end" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", width: "100%", maxHeight: "88%", overflowY: "auto", borderRadius: "16px 16px 0 0", padding: "14px 16px 20px" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--surface)", width: "100%", maxHeight: "88%", overflowY: "auto", borderRadius: "16px 16px 0 0", padding: "14px 16px 20px" }}>
         <div className="muted" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: 10 }}>{p.m.sender_label} : {snippet(p.m) || "…"}</div>
         {fwd ? (<>
           <b>Transférer à</b>
@@ -42,13 +42,13 @@ export function MessageSheet(p: {
         </>) : (<>
           {more && <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
             {REACTIONS.map((r) => <button key={r.kind} onClick={() => p.onReact(r.kind)} aria-label={r.label}
-              style={{ flex: 1, display: "flex", gap: 6, alignItems: "center", justifyContent: "center", padding: "10px 0", borderRadius: 12, border: "1px solid var(--line)", background: p.myReactions.has(r.kind) ? "var(--soft)" : "#fff", color: p.myReactions.has(r.kind) ? "var(--primary)" : "inherit" }}>
+              style={{ flex: 1, display: "flex", gap: 6, alignItems: "center", justifyContent: "center", padding: "10px 0", borderRadius: 12, border: "1px solid var(--line)", background: p.myReactions.has(r.kind) ? "var(--soft)" : "var(--surface)", color: p.myReactions.has(r.kind) ? "var(--primary)" : "inherit" }}>
               <Icon name={r.icon} size={20} /> {r.label}</button>)}
           </div>}
           <div className="muted" style={{ fontWeight: 600, marginBottom: 6 }}><Icon name="tag" size={16} /> Étiquettes</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {p.tags.map((t) => { const on = p.activeTags.has(t.id); return (
-              <button key={t.id} onClick={() => p.onTag(t.id)} style={{ padding: "6px 12px", borderRadius: 16, border: `1.5px solid ${t.color}`, background: on ? t.color : "#fff", color: on ? "#fff" : t.color, fontWeight: 600, fontSize: 13 }}>{t.name}</button>); })}
+              <button key={t.id} onClick={() => p.onTag(t.id)} style={{ padding: "6px 12px", borderRadius: 16, border: `1.5px solid ${t.color}`, background: on ? t.color : "var(--surface)", color: on ? "#fff" : t.color, fontWeight: 600, fontSize: 13 }}>{t.name}</button>); })}
           </div>
           <div style={{ display: "flex", gap: 8, margin: "10px 0 6px" }}>
             <input placeholder="Nouvelle étiquette" value={name} maxLength={30} onChange={(e) => setName(e.target.value)} style={{ flex: 1 }} />
@@ -100,13 +100,13 @@ export function Collection({ mode, businessId, chatName, onOpen }: {
   const used = useMemo(() => { const m = new Map<string, Tag>(); (rows ?? []).forEach((r) => r.tags.forEach((t) => m.set(t.id, t))); return [...m.values()]; }, [rows]);
   const shown = (rows ?? []).filter((r) => !pick || r.tags.some((t) => t.id === pick));
   return (<>
-    {mode === "tagged" && used.length > 0 && <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "8px 16px", background: "#fff", borderBottom: "1px solid var(--line)" }}>
-      {used.map((t) => <button key={t.id} onClick={() => setPick(pick === t.id ? "" : t.id)} style={{ flex: "none", padding: "5px 12px", borderRadius: 16, border: `1.5px solid ${t.color}`, background: pick === t.id ? t.color : "#fff", color: pick === t.id ? "#fff" : t.color, fontWeight: 600, fontSize: 13 }}>{t.name}</button>)}
+    {mode === "tagged" && used.length > 0 && <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "8px 16px", background: "var(--surface)", borderBottom: "1px solid var(--line)" }}>
+      {used.map((t) => <button key={t.id} onClick={() => setPick(pick === t.id ? "" : t.id)} style={{ flex: "none", padding: "5px 12px", borderRadius: 16, border: `1.5px solid ${t.color}`, background: pick === t.id ? t.color : "var(--surface)", color: pick === t.id ? "#fff" : t.color, fontWeight: 600, fontSize: 13 }}>{t.name}</button>)}
     </div>}
     {rows === null && <p className="muted" style={{ padding: 16 }}>Chargement…</p>}
     {rows && shown.length === 0 && <p className="muted" style={{ padding: 16 }}>{mode === "tagged" ? "Aucun message étiqueté. Appuyez longuement sur un message pour l'étiqueter." : "Aucun message enregistré. Appuyez longuement sur un message pour l'enregistrer."}</p>}
     {shown.map((r) => (
-      <div key={r.message.id} onClick={() => onOpen(r.message.channel_id, r.message.id)} style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)", background: "#fff", cursor: "pointer" }}>
+      <div key={r.message.id} onClick={() => onOpen(r.message.channel_id, r.message.id)} style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)", background: "var(--surface)", cursor: "pointer" }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
           <b style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.message.sender_label}<span className="muted" style={{ fontWeight: 400, fontSize: 12 }}> · {chatName(r.message.channel_id)}</span></b>
           <span className="muted" style={{ fontSize: 12 }}>{new Date(r.message.sent_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })}</span>

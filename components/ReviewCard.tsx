@@ -58,7 +58,7 @@ function Table({ rows, editing, bad, field, onCell }: {
             const isBad = field === "stock" && bad.has(`${i}.${c}`);
             const textual = c === "size" || c === "room" || typeof r[c] === "string";
             return (
-              <td key={c} style={{ padding: "6px 4px", textAlign: textual ? "left" : "right", background: isBad ? "#FCEFD6" : undefined, fontWeight: textual ? 700 : 500, whiteSpace: "nowrap" }}>
+              <td key={c} style={{ padding: "6px 4px", textAlign: textual ? "left" : "right", background: isBad ? "var(--warn-bg)" : undefined, fontWeight: textual ? 700 : 500, whiteSpace: "nowrap" }}>
                 {editing && !textual
                   ? <input inputMode="numeric" value={String(r[c] ?? "")} onChange={(e) => onCell(i, c, e.target.value)}
                       style={{ width: 54, minHeight: 40, padding: "4px 4px", fontSize: 14, textAlign: "right", borderColor: isBad ? "var(--pending)" : undefined }} />

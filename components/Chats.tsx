@@ -11,19 +11,20 @@ export type Ctx = { business_id: string; business: string; person_id: string; na
 type Item = {
   channel_id: string; kind: "group" | "direct"; name: string; other_person: string | null; other_name: string | null;
   other_avatar: string | null; last_kind: string | null; last_text: string | null; last_at: string | null;
-  last_sender: string | null; unread: number; unit_name?: string | null;
+  last_sender: string | null; unread: number; unit_name?: string | null; last_tags?: string[] | null;
 };
 type Person = { name: string; avatar: string | null };
 type Screen = { s: "list" } | { s: "new" } | { s: "convo"; id: string; focus?: string } | { s: "info"; id: string };
 
-const chipStyle = (on: boolean) => ({ flex: "none" as const, padding: "6px 12px", borderRadius: 16, border: "1px solid var(--line)", background: on ? "var(--primary)" : "#fff", color: on ? "#fff" : "inherit", fontSize: 13, cursor: "pointer" });
+const chipStyle = (on: boolean) => ({ flex: "none" as const, padding: "10px 18px", borderRadius: 22, border: 0, background: on ? "var(--soft)" : "var(--surface2)", color: on ? "var(--primary)" : "var(--text)", fontSize: 16, fontWeight: on ? 600 : 400, cursor: "pointer", minHeight: 0 });
+const iconFor = (i: Item): Parameters<typeof Icon>[0]["name"] => i.kind === "direct" ? "user" : /charg|livr|supplier|fournis/i.test(i.name) ? "truck" : i.unit_name === "Administration" ? "briefcase" : i.unit_name === "Ponte" ? "egg" : i.unit_name === "Site Mankoulang" ? "home" : "group";
 const norm = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 function SearchBox({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
   return (
-    <div style={{ padding: "10px 16px", background: "#fff", borderBottom: "1px solid var(--line)", position: "relative" }}>
-      <span aria-hidden style={{ position: "absolute", left: 28, top: 20, color: "var(--muted)", display: "flex" }}><Icon name="search" size={18} /></span>
+    <div style={{ padding: "6px 16px 12px", position: "relative" }}>
+      <span aria-hidden style={{ position: "absolute", left: 32, top: 21, color: "var(--muted)", display: "flex" }}><Icon name="search" size={20} /></span>
       <input type="search" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
-        style={{ paddingLeft: 38, borderRadius: 22, background: "var(--bg)" }} />
+        style={{ paddingLeft: 46, borderRadius: 26, background: "var(--surface2)", border: 0, minHeight: 50, fontSize: 17 }} />
     </div>);
 }
 const title = (i: Item) => (i.kind === "direct" ? i.other_name ?? "?" : i.name);
@@ -87,10 +88,11 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
   }
 
   return (<>
-    <div className="top"><span>Discussions</span>
-      <button className="primary" style={{ minWidth: 44 }} onClick={() => go({ s: "new" })} aria-label="Nouvelle discussion"><Icon name="plus" /></button></div>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 16px 4px" }}>
+      <span style={{ fontSize: 34, fontWeight: 700, letterSpacing: -0.5 }}>Messages</span>
+      <button onClick={() => go({ s: "new" })} aria-label="Nouvelle discussion" style={{ border: 0, background: "none", minWidth: 44, color: "var(--text)", display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name="edit" size={27} /></button></div>
     <SearchBox value={q} onChange={setQ} placeholder="Rechercher une personne ou un groupe" />
-    <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "8px 16px", background: "#fff", borderBottom: "1px solid var(--line)" }}>
+    <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "2px 16px 12px" }}>
       {([["all", "Tout"], ["unread", "Non lus"], ["groups", "Groupes"], ["tagged", "Étiquetés"], ["saved", "Enregistrés"]] as const).map(([k, l]) =>
         <button key={k} style={chipStyle(tab === k)} onClick={() => setTab(k)}>{l}</button>)}
     </div>
@@ -98,7 +100,7 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
       const units = [...new Set(items.map((i) => i.unit_name).filter(Boolean))] as string[];
       if (units.length < 2) return null;
       const chip = chipStyle;
-      return <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "8px 16px", background: "#fff", borderBottom: "1px solid var(--line)" }}>
+      return <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "0 16px 12px" }}>
         <button style={chip(!unit)} onClick={() => setUnit("")}>Tout</button>
         {units.map((u) => <button key={u} style={chip(unit === u)} onClick={() => setUnit(unit === u ? "" : u)}>{u}</button>)}
       </div>;
@@ -118,17 +120,22 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
         return (<>
           {nq && shown.length > 0 && <div className="muted" style={{ padding: "10px 16px 4px", fontWeight: 600 }}>Discussions</div>}
           {shown.map((i) => (
-            <div key={i.channel_id} onClick={() => go({ s: "convo", id: i.channel_id })}
-              style={{ display: "flex", gap: 12, padding: "12px 16px", borderBottom: "1px solid var(--line)", background: "#fff", cursor: "pointer", alignItems: "center" }}>
-              <Avatar name={title(i)} src={i.kind === "direct" ? i.other_avatar : null} size={52} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                  <b style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title(i)}{i.unit_name && i.kind === "group" ? <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}> · {i.unit_name}</span> : null}</b>
-                  <span className="muted" style={{ fontSize: 12, color: i.unread ? "var(--primary)" : undefined }}>{when(i.last_at)}</span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 2 }}>
-                  <span className="muted" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{preview(i)}</span>
-                  {i.unread > 0 && <span style={{ background: "var(--primary)", color: "#fff", borderRadius: 12, minWidth: 22, height: 22, padding: "0 6px", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{i.unread}</span>}
+            <div key={i.channel_id} onClick={() => go({ s: "convo", id: i.channel_id })} style={{ padding: "0 16px", cursor: "pointer" }}>
+              <div style={{ display: "flex", gap: 14, padding: "16px 0", borderBottom: "1px solid var(--line)", alignItems: "flex-start" }}>
+                <Avatar name={title(i)} src={i.kind === "direct" ? i.other_avatar : null} icon={iconFor(i)} size={58} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
+                    <b style={{ fontSize: 20, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title(i)}</b>
+                    <span className="muted" style={{ fontSize: 15, color: i.unread ? "var(--primary)" : undefined, flex: "none" }}>{when(i.last_at)}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 4, alignItems: "center" }}>
+                    <span style={{ color: "var(--muted)", fontSize: 16, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{preview(i)}</span>
+                    {i.unread > 0 && <span style={{ background: "var(--soft)", color: "var(--primary)", borderRadius: 16, minWidth: 30, height: 30, padding: "0 9px", fontSize: 15, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}>{i.unread}</span>}
+                  </div>
+                  {(i.last_tags?.length || (i.kind === "group" && i.unit_name)) ? <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+                    {(i.last_tags ?? []).map((t) => <span key={t} style={{ background: "var(--surface2)", borderRadius: 14, padding: "4px 14px", fontSize: 15 }}>{t}</span>)}
+                    {i.kind === "group" && i.unit_name && !(i.last_tags?.length) && <span style={{ color: "var(--muted)", fontSize: 13, padding: "5px 0" }}>{i.unit_name}</span>}
+                  </div> : null}
                 </div>
               </div>
             </div>))}
@@ -140,7 +147,7 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
                 if (error) return setSearchErr("Impossible d'ouvrir la discussion.");
                 setQ(""); await loadList(); go({ s: "convo", id: data as string });
               }}
-              style={{ display: "flex", gap: 12, padding: "12px 16px", borderBottom: "1px solid var(--line)", background: "#fff", cursor: "pointer", alignItems: "center" }}>
+              style={{ display: "flex", gap: 12, padding: "12px 16px", borderBottom: "1px solid var(--line)", background: "var(--surface)", cursor: "pointer", alignItems: "center" }}>
               <Avatar name={people[m.person_id]?.name ?? "?"} src={people[m.person_id]?.avatar} size={44} />
               <span style={{ flex: 1 }}>{people[m.person_id]?.name}</span><span className="muted" style={{ fontSize: 13 }}>Écrire</span>
             </div>))}
@@ -258,23 +265,29 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, chats, focu
   const dxRef = useRef(0);
   const open = (mid: string, only = false) => { setSheetNote(""); setTagOnly(only); setMenu(mid); };
   const bind = (mid: string) => ({
-    onTouchStart: (e: React.TouchEvent) => {
-      const t = e.touches[0]; start.current = { x: t.clientX, y: t.clientY }; dxRef.current = 0;
-      press.current = window.setTimeout(() => { start.current = null; open(mid); }, 450);
+    onPointerDown: (e: React.PointerEvent) => {
+      if ((e.target as HTMLElement).closest("button,audio,input,a")) return;
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      start.current = { x: e.clientX, y: e.clientY }; dxRef.current = 0;
+      if (e.pointerType !== "mouse") press.current = window.setTimeout(() => { start.current = null; open(mid); }, 450);
     },
-    onTouchMove: (e: React.TouchEvent) => {
+    onPointerMove: (e: React.PointerEvent) => {
       const s0 = start.current; if (!s0) return;
-      const t = e.touches[0]; const dx = t.clientX - s0.x, dy = t.clientY - s0.y;
-      if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { window.clearTimeout(press.current); start.current = null; dxRef.current = 0; setDrag(null); return; }
-      if (dx > 8) { window.clearTimeout(press.current); dxRef.current = Math.min(dx, 90); setDrag({ id: mid, dx: dxRef.current }); }
+      const dx = e.clientX - s0.x, dy = e.clientY - s0.y;
+      if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx) && dxRef.current === 0) { window.clearTimeout(press.current); start.current = null; return; }
+      if (dx > 8) {
+        window.clearTimeout(press.current);
+        try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+        dxRef.current = Math.min(dx, 90); setDrag({ id: mid, dx: dxRef.current });
+      }
     },
-    onTouchEnd: () => {
+    onPointerUp: () => {
       window.clearTimeout(press.current);
       const done = dxRef.current >= 60 && start.current !== null;
       start.current = null; dxRef.current = 0; setDrag(null);
       if (done) open(mid, true);
     },
-    onTouchCancel: () => { window.clearTimeout(press.current); start.current = null; dxRef.current = 0; setDrag(null); },
+    onPointerCancel: () => { window.clearTimeout(press.current); start.current = null; dxRef.current = 0; setDrag(null); },
     onContextMenu: (e: React.MouseEvent) => { e.preventDefault(); open(mid); },
   });
 
@@ -352,17 +365,17 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, chats, focu
             {(m.kind === "image" || m.kind === "audio") ? <MediaView m={m} /> : <div>{m.text}</div>}
             <TagPills ids={(m.message_tag ?? []).map((t) => t.tag_id)} tags={tags} />
             {counts.length > 0 && <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-              {counts.map((r) => <button key={r.kind} onClick={() => react(m, r.kind)} aria-label={r.label} style={{ display: "flex", alignItems: "center", gap: 3, padding: "2px 8px", minHeight: 26, borderRadius: 12, border: "1px solid var(--line)", background: r.mine ? "var(--soft)" : "#fff", color: r.mine ? "var(--primary)" : "inherit", fontSize: 12 }}><Icon name={r.icon} size={14} />{r.n}</button>)}
+              {counts.map((r) => <button key={r.kind} onClick={() => react(m, r.kind)} aria-label={r.label} style={{ display: "flex", alignItems: "center", gap: 3, padding: "2px 8px", minHeight: 26, borderRadius: 12, border: "1px solid var(--line)", background: r.mine ? "var(--soft)" : "var(--surface)", color: r.mine ? "var(--primary)" : "inherit", fontSize: 12 }}><Icon name={r.icon} size={14} />{r.n}</button>)}
             </div>}
             <div className="t">{isPinned(m) && <Icon name="pin" size={12} />} {saved.has(m.id) && <Icon name="bookmark" size={12} />} {new Date(m.sent_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</div>
           </div></div></div>);
       })}
       <div ref={end} />
     </div>
-    {replyTo && <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "6px 16px", background: "#fff", borderTop: "1px solid var(--line)" }}>
+    {replyTo && <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "6px 16px", background: "var(--surface)", borderTop: "1px solid var(--line)" }}>
       <Icon name="reply" size={18} /><div style={{ flex: 1, minWidth: 0, borderLeft: "3px solid var(--primary)", paddingLeft: 8, fontSize: 13 }}><b>{replyTo.sender_label}</b><div className="muted" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{snippet(replyTo)}</div></div>
       <button onClick={() => setReplyTo(null)} aria-label="Annuler la réponse" style={{ border: 0, background: "none", minWidth: 36 }}><Icon name="close" size={18} /></button></div>}
-    {note && <div className="muted" style={{ padding: "6px 16px", background: "#fff", color: note === "Message transféré." ? "var(--primary)" : "var(--error)" }}>{note}</div>}
+    {note && <div className="muted" style={{ padding: "6px 16px", background: "var(--surface)", color: note === "Message transféré." ? "var(--primary)" : "var(--error)" }}>{note}</div>}
     {(() => { const m = msgs.find((x) => x.id === menu); if (!m) return null;
       return <MessageSheet key={m.id + tagOnly} m={m} tags={tags} activeTags={new Set((m.message_tag ?? []).map((t) => t.tag_id))}
         myReactions={new Set((m.message_reaction ?? []).filter((r) => r.member_id === me).map((r) => r.kind))}
@@ -456,16 +469,16 @@ function NewChat({ ctx, isAdmin, people, members, onBack, onOpen }: {
     <SearchBox value={q} onChange={setQ} placeholder="Rechercher une personne" />
     <div className="body" style={{ padding: 0 }}>
       {!group && isAdmin && !q && (
-        <div onClick={() => setGroup(true)} style={{ display: "flex", gap: 12, padding: "12px 16px", background: "#fff", borderBottom: "1px solid var(--line)", alignItems: "center", cursor: "pointer" }}>
+        <div onClick={() => setGroup(true)} style={{ display: "flex", gap: 12, padding: "12px 16px", background: "var(--surface)", borderBottom: "1px solid var(--line)", alignItems: "center", cursor: "pointer" }}>
           <div style={{ width: 48, height: 48, borderRadius: "50%", background: "var(--primary)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name="group" size={26} /></div><b>Nouveau groupe</b>
         </div>)}
-      {group && <div style={{ padding: 16, background: "#fff" }}>
+      {group && <div style={{ padding: 16, background: "var(--surface)" }}>
         <input placeholder="Nom du groupe" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />
         <p className="muted">Choisissez les participants :</p></div>}
       {others.length === 0 && <p className="muted" style={{ padding: 16 }}>Personne d'autre dans l'équipe pour l'instant. Invitez quelqu'un dans Réglages.</p>}
       {others.map((m) => (
         <div key={m.member_id} onClick={() => (group ? setPick((s) => { const n = new Set(s); if (n.has(m.member_id)) n.delete(m.member_id); else n.add(m.member_id); return n; }) : direct(m.member_id))}
-          style={{ display: "flex", gap: 12, padding: "12px 16px", background: "#fff", borderBottom: "1px solid var(--line)", alignItems: "center", cursor: "pointer" }}>
+          style={{ display: "flex", gap: 12, padding: "12px 16px", background: "var(--surface)", borderBottom: "1px solid var(--line)", alignItems: "center", cursor: "pointer" }}>
           <Avatar name={people[m.person_id]?.name ?? "?"} src={people[m.person_id]?.avatar} size={44} />
           <span style={{ flex: 1 }}>{people[m.person_id]?.name ?? "?"}</span>
           {group && <input type="checkbox" readOnly checked={pick.has(m.member_id)} style={{ width: 22, minHeight: 22 }} />}
