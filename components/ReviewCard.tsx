@@ -72,8 +72,8 @@ function Table({ rows, editing, bad, field, onCell }: {
   );
 }
 
-export default function ReviewCard({ d, title, source, evidence, photo, onDone }: {
-  d: Draft; title: string; source: string; evidence: string; photo?: string; onDone: () => void;
+export default function ReviewCard({ d, title, source, evidence, photo, onDone, canApprove = true, approvers = [] }: {
+  d: Draft; title: string; source: string; evidence: string; photo?: string; onDone: () => void; canApprove?: boolean; approvers?: string[];
 }) {
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
   const [editing, setEditing] = useState(false);
@@ -142,13 +142,14 @@ export default function ReviewCard({ d, title, source, evidence, photo, onDone }
       {pct != null && <div className="muted">Confiance de l'IA : {level} ({pct}%) · Vérifiez avant d'approuver</div>}
       {err && <p style={{ color: "var(--error)" }}>{err}</p>}
 
-      <p><button className="primary big" disabled={busy} onClick={approve}>{editing && changed ? "Approuver avec mes corrections" : "Approuver le rapport"}</button></p>
-      <div className="row">
+      {!canApprove && <div className="quote">Vous ne pouvez pas approuver ce type de rapport.{approvers.length > 0 && <> Peuvent l'approuver : <b>{approvers.join(", ")}</b>.</>}</div>}
+      {canApprove && <p><button className="primary big" disabled={busy} onClick={approve}>{editing && changed ? "Approuver avec mes corrections" : "Approuver le rapport"}</button></p>}
+      {canApprove && <div className="row">
         {editing
           ? <button disabled={busy} onClick={() => { setF(structuredClone(d.fields)); setEditing(false); }}>Annuler</button>
           : <button disabled={busy} onClick={() => setEditing(true)}>Modifier</button>}
         <button disabled={busy} onClick={reject}>Rejeter</button>
-      </div>
+      </div>}
     </div>
   );
 }

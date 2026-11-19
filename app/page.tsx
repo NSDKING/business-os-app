@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase, type Channel, type Draft, type Message } from "@/lib/supabase";
 import { enqueue, flushQueue, readQueue } from "@/lib/queue";
 import ReviewCard from "@/components/ReviewCard";
+import Approvers from "@/components/Approvers";
 import Business from "@/components/Business";
 import Chats from "@/components/Chats";
 import Avatar from "@/components/Avatar";
@@ -75,7 +76,23 @@ export default function Home() {
 function Reports({ ctx }: { ctx: Ctx }) {
   const [drafts, setDrafts] = useState<(Draft & { rt?: string; src?: string; ev?: string; photo?: string })[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [rights, setRights] = useState<{ all: boolean; types: Set<string>; byType: Map<string, string[]>; everyone: string[] }>({ all: false, types: new Set(), byType: new Map(), everyone: [] });
   const load = useCallback(async () => {
+    // who may approve what (set by the owner in Réglages)
+    const [{ data: me }, { data: gs }, { data: ms }, { data: ps }] = await Promise.all([
+      supabase.from("member").select("id").eq("business_id", ctx.business_id).eq("person_id", ctx.person_id).limit(1),
+      supabase.from("role_grant").select("member_id,scope_record_type_id,scope_unit_id").eq("business_id", ctx.business_id).eq("permission", "approve").is("revoked_at", null),
+      supabase.from("member").select("id,person_id").eq("business_id", ctx.business_id),
+      supabase.from("person").select("id,display_name"),
+    ]);
+    const nm = new Map((ms ?? []).map((m) => [m.id, (ps ?? []).find((p) => p.id === m.person_id)?.display_name ?? "?"]));
+    const mine = me?.[0]?.id; const byType = new Map<string, string[]>(); const everyone: string[] = [];
+    for (const g of gs ?? []) {
+      if (!g.scope_record_type_id && !g.scope_unit_id) everyone.push(nm.get(g.member_id) ?? "?");
+      else if (g.scope_record_type_id) byType.set(g.scope_record_type_id, [...(byType.get(g.scope_record_type_id) ?? []), nm.get(g.member_id) ?? "?"]);
+    }
+    setRights({ all: (gs ?? []).some((g) => g.member_id === mine && !g.scope_record_type_id && !g.scope_unit_id),
+      types: new Set((gs ?? []).filter((g) => g.member_id === mine && g.scope_record_type_id).map((g) => g.scope_record_type_id as string)), byType, everyone });
     const { data: ds } = await supabase.from("draft").select("*").eq("business_id", ctx.business_id).eq("status", "proposed").order("created_at", { ascending: false });
     const out = [];
     for (const d of ds ?? []) {
@@ -102,7 +119,7 @@ function Reports({ ctx }: { ctx: Ctx }) {
   }, [load, ctx.business_id]);
   return (<div className="body">
     {loaded && drafts.length === 0 && <div className="card"><span className="pill ok">Tout est à jour</span><p className="muted">Aucun rapport à approuver.</p></div>}
-    {drafts.map((d) => <ReviewCard key={d.id} d={d} title={d.rt ?? "Rapport"} source={d.src ?? ""} evidence={d.ev ?? ""} photo={d.photo} onDone={load} />)}
+    {drafts.map((d) => <ReviewCard key={d.id} d={d} canApprove={rights.all || rights.types.has(d.record_type_id)} approvers={[...new Set([...rights.everyone, ...(rights.byType.get(d.record_type_id) ?? [])])]} title={d.rt ?? "Rapport"} source={d.src ?? ""} evidence={d.ev ?? ""} photo={d.photo} onDone={load} />)}
   </div>);
 }
 
@@ -187,6 +204,7 @@ function Settings({ ctx }: { ctx: Ctx }) {
             </div>
           </div>))}
       </div>
+      <Approvers businessId={ctx.business_id} />
       <div className="card"><h3>Inviter quelqu'un</h3>
         <p><input placeholder="Nom de la personne" value={name} onChange={(e) => setName(e.target.value)} /></p>
         <button className="primary big" disabled={!name.trim()} onClick={invite}>Créer le lien</button>
