@@ -24,6 +24,7 @@ export function TagPills({ ids, tags }: { ids: string[]; tags: Tag[] }) {
 export function MessageSheet(p: {
   m: Message; tags: Tag[]; activeTags: Set<string>; myReactions: Set<string>; saved: boolean; pinned: boolean;
   targets: { id: string; name: string }[]; canForward: boolean; note: string; tagOnly?: boolean;
+  receipts?: { name: string; state: "read" | "delivered" | "none" }[];
   onClose: () => void; onReply: () => void; onTag: (id: string) => void; onNewTag: (name: string) => void;
   onReact: (kind: string) => void; onSave: () => void; onPin: () => void; onForward: (channel: string) => void; onCopy: () => void;
 }) {
@@ -62,6 +63,13 @@ export function MessageSheet(p: {
             {p.canForward && row("forward", "Transférer", () => setFwd(true))}
             {p.m.kind === "text" && row("copy", "Copier le texte", p.onCopy)}
           </div>}
+          {more && p.receipts && p.receipts.length > 0 && (() => {
+            const by = (st: string) => p.receipts!.filter((r) => r.state === st).map((r) => r.name).join(", ");
+            const line = (label: string, v: string) => v ? <div style={{ padding: "4px 0" }}><span className="muted">{label} </span>{v}</div> : null;
+            return <div style={{ borderTop: "1px solid var(--line)", marginTop: 8, paddingTop: 10 }}>
+              <b>Infos du message</b>
+              {line("Lu par", by("read"))}{line("Reçu par", by("delivered"))}{line("Pas encore reçu par", by("none"))}
+            </div>; })()}
         </>)}
         {p.note && <p style={{ color: "var(--error)" }}>{p.note}</p>}
       </div>

@@ -2,7 +2,7 @@
 import { toPhoto, startRecording, recorderSupported, mediaUrl, MAX_VOICE_SECONDS, type Recording } from "@/lib/media";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase, type Message } from "@/lib/supabase";
-import { enqueue, flushQueue } from "@/lib/queue";
+import { enqueue, flushQueue, readQueue } from "@/lib/queue";
 import Avatar from "./Avatar";
 import Icon from "./Icon";
 import { Collection, MessageSheet, TagPills, REACTIONS, snippet, type Tag } from "./MessageTools";
@@ -58,6 +58,8 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
   const loadList = useCallback(async () => {
     const { data } = await supabase.rpc("chat_list", { p_business: ctx.business_id });
     setItems((data as Item[]) ?? []); setLoaded(true);
+    // This phone now has the latest messages: tell the senders ("distribué"). The request only runs when we wait for it.
+    supabase.rpc("mark_delivered", { p_business: ctx.business_id }).then(() => {});
   }, [ctx.business_id]);
 
   useEffect(() => {
@@ -75,7 +77,10 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
     return () => { supabase.removeChannel(sub); };
   }, [loadList, ctx.business_id]);
 
-  const go = (s: Screen) => { setScreen(s); onFull(s.s !== "list"); if (s.s === "list") loadList(); };
+  const go = (s: Screen) => {
+    setScreen(s); onFull(s.s !== "list"); if (s.s === "list") loadList();
+    if (s.s === "convo") setItems((it) => it.map((i) => (i.channel_id === s.id ? { ...i, unread: 0 } : i)));
+  };
   const cur = screen.s === "convo" || screen.s === "info" ? items.find((i) => i.channel_id === screen.id) : undefined;
 
   if (screen.s === "new") return <NewChat ctx={ctx} isAdmin={isAdmin} people={people} members={members}
@@ -83,7 +88,7 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
   if ((screen.s === "convo" || screen.s === "info") && cur) {
     return screen.s === "info"
       ? <GroupInfo item={cur} people={people} onBack={() => go({ s: "convo", id: cur.channel_id })} onRenamed={loadList} />
-      : <Convo ctx={ctx} item={cur} people={people} online={online} onQueue={onQueue} chats={items} focus={screen.s === "convo" ? screen.focus : undefined}
+      : <Convo ctx={ctx} item={cur} people={people} online={online} onQueue={onQueue} onRead={loadList} chats={items} focus={screen.s === "convo" ? screen.focus : undefined}
           onBack={() => go({ s: "list" })} onInfo={() => cur.kind === "group" && go({ s: "info", id: cur.channel_id })} />;
   }
 
@@ -176,8 +181,8 @@ function MediaView({ m }: { m: Message }) {
   </>);
 }
 
-function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, chats, focus }: {
-  ctx: Ctx; item: Item; people: Record<string, Person>; online: boolean; onQueue: () => void; onBack: () => void; onInfo: () => void; chats: Item[]; focus?: string;
+function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, onRead, chats, focus }: {
+  ctx: Ctx; item: Item; people: Record<string, Person>; online: boolean; onQueue: () => void; onBack: () => void; onInfo: () => void; onRead: () => void; chats: Item[]; focus?: string;
 }) {
   const [msgs, setMsgs] = useState<Message[]>([]);
   const [text, setText] = useState("");
@@ -195,6 +200,25 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, chats, focu
   const press = useRef<number | undefined>(undefined);
   const focused = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const onReadRef = useRef(onRead); onReadRef.current = onRead;
+  type Receipt = { person_name: string; last_read_at: string | null; last_delivered_at: string | null };
+  const [receipts, setReceipts] = useState<Receipt[]>([]);
+  useEffect(() => { // who has received / read what; refreshed every few seconds while the conversation is open
+    let on = true;
+    const get = () => supabase.rpc("message_receipts", { p_channel: id }).then(({ data }) => { if (on) setReceipts((data as Receipt[]) ?? []); });
+    get(); const t = setInterval(get, 8000);
+    return () => { on = false; clearInterval(t); };
+  }, [id]);
+  const time = (iso?: string | null) => (iso ? new Date(iso).getTime() : 0);
+  const tOf = (m: Message) => Math.min(time(m.sent_at), m.imported_at ? time(m.imported_at) : Infinity);
+  const recState = (r: Receipt, t: number): "read" | "delivered" | "none" => (time(r.last_read_at) >= t ? "read" : time(r.last_delivered_at) >= t ? "delivered" : "none");
+  const pendingIds = new Set(readQueue().map((q) => q.id));
+  const statusOf = (m: Message): "sending" | "sent" | "delivered" | "read" => {
+    if (pendingIds.has(m.id)) return "sending";
+    if (!receipts.length) return "sent";
+    const st = receipts.map((r) => recState(r, tOf(m)));
+    return st.every((x) => x === "read") ? "read" : st.every((x) => x !== "none") ? "delivered" : "sent";
+  };
   const focusInput = () => setTimeout(() => inputRef.current?.focus(), 0);
 
   const load = useCallback(async () => {
@@ -208,10 +232,11 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, chats, focu
   }, [ctx.business_id, ctx.person_id]);
 
   useEffect(() => {
-    load().then(() => { supabase.rpc("mark_read", { p_channel: id }); });
+    const read = () => supabase.rpc("mark_read", { p_channel: id }).then(() => onReadRef.current());
+    load().then(read);
     const sub = supabase.channel("msg-" + id)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "message", filter: `channel_id=eq.${id}` },
-        (p) => { setMsgs((m) => (m.some((x) => x.id === (p.new as Message).id) ? m : [...m, p.new as Message])); supabase.rpc("mark_read", { p_channel: id }); })
+        (p) => { setMsgs((m) => (m.some((x) => x.id === (p.new as Message).id) ? m : [...m, p.new as Message])); read(); })
       .subscribe();
     return () => { supabase.removeChannel(sub); };
   }, [id, load]);
@@ -369,7 +394,10 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, chats, focu
             {counts.length > 0 && <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
               {counts.map((r) => <button key={r.kind} onClick={() => react(m, r.kind)} aria-label={r.label} style={{ display: "flex", alignItems: "center", gap: 3, padding: "2px 8px", minHeight: 26, borderRadius: 12, border: "1px solid var(--line)", background: r.mine ? "var(--soft)" : "var(--surface)", color: r.mine ? "var(--primary)" : "inherit", fontSize: 12 }}><Icon name={r.icon} size={14} />{r.n}</button>)}
             </div>}
-            <div className="t">{isPinned(m) && <Icon name="pin" size={12} />} {saved.has(m.id) && <Icon name="bookmark" size={12} />} {new Date(m.sent_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</div>
+            <div className="t">{isPinned(m) && <Icon name="pin" size={12} />} {saved.has(m.id) && <Icon name="bookmark" size={12} />} {new Date(m.sent_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}{mine && (() => {
+              const st = statusOf(m);
+              return <span title={{ sending: "Envoi en cours", sent: "Envoyé", delivered: "Distribué", read: "Lu" }[st]} style={{ marginLeft: 4, color: st === "read" ? "var(--primary)" : "var(--muted)" }}>
+                <Icon name={st === "sending" ? "clock" : st === "sent" ? "check" : "checks"} size={14} /></span>; })()}</div>
           </div></div></div>);
       })}
       <div ref={end} />
@@ -382,6 +410,7 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, chats, focu
       return <MessageSheet key={m.id + tagOnly} m={m} tags={tags} activeTags={new Set((m.message_tag ?? []).map((t) => t.tag_id))}
         myReactions={new Set((m.message_reaction ?? []).filter((r) => r.member_id === me).map((r) => r.kind))}
         saved={saved.has(m.id)} pinned={isPinned(m)} canForward={m.kind === "text"} note={sheetNote} tagOnly={tagOnly}
+        receipts={m.person_id === ctx.person_id ? receipts.map((r) => ({ name: r.person_name, state: recState(r, tOf(m)) })) : undefined}
         targets={chats.filter((c) => c.channel_id !== id).map((c) => ({ id: c.channel_id, name: title(c) }))}
         onClose={() => setMenu(null)} onReply={() => { setReplyTo(m); setMenu(null); focusInput(); }}
         onTag={(t) => { setMenu(null); focusInput(); toggleTag(m, t); }} onNewTag={(nm) => { setMenu(null); focusInput(); newTag(m, nm); }} onReact={(k) => react(m, k)}

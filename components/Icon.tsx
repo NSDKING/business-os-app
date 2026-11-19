@@ -14,6 +14,8 @@ const P: Record<string, React.ReactNode> = {
   home: <path d="M4 11l8-7 8 7v9H4zM10 20v-6h4v6" />,
   user: <><circle cx="12" cy="8" r="3.5" /><path d="M5 20a7 7 0 0114 0" /></>,
   edit: <path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4" />,
+  clock: <><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></>,
+  checks: <path d="M2 13l4 4L14 8M10 15l2 2L21 8" />,
   more: <><circle cx="12" cy="5" r="1.4" /><circle cx="12" cy="12" r="1.4" /><circle cx="12" cy="19" r="1.4" /></>,
   reply: <path d="M10 6L4 12l6 6M4 12h9a7 7 0 017 7" />,
   bookmark: <path d="M6 4h12v17l-6-4-6 4z" />,
