@@ -10,7 +10,7 @@ export type Ctx = { business_id: string; business: string; person_id: string; na
 type Item = {
   channel_id: string; kind: "group" | "direct"; name: string; other_person: string | null; other_name: string | null;
   other_avatar: string | null; last_kind: string | null; last_text: string | null; last_at: string | null;
-  last_sender: string | null; unread: number;
+  last_sender: string | null; unread: number; unit_name?: string | null;
 };
 type Person = { name: string; avatar: string | null };
 type Screen = { s: "list" } | { s: "new" } | { s: "convo"; id: string } | { s: "info"; id: string };
@@ -48,6 +48,7 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
   const [members, setMembers] = useState<{ member_id: string; person_id: string }[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [q, setQ] = useState("");
+  const [unit, setUnit] = useState<string>("");
   const [searchErr, setSearchErr] = useState("");
 
   const loadList = useCallback(async () => {
@@ -86,11 +87,21 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
     <div className="top"><span>Discussions</span>
       <button className="primary" style={{ minWidth: 44 }} onClick={() => go({ s: "new" })} aria-label="Nouvelle discussion"><Icon name="plus" /></button></div>
     <SearchBox value={q} onChange={setQ} placeholder="Rechercher une personne ou un groupe" />
+    {(() => {
+      const units = [...new Set(items.map((i) => i.unit_name).filter(Boolean))] as string[];
+      if (units.length < 2) return null;
+      const chip = (on: boolean) => ({ flex: "none" as const, padding: "6px 12px", borderRadius: 16, border: "1px solid var(--line)", background: on ? "var(--primary)" : "#fff", color: on ? "#fff" : "inherit", fontSize: 13, cursor: "pointer" });
+      return <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "8px 16px", background: "#fff", borderBottom: "1px solid var(--line)" }}>
+        <button style={chip(!unit)} onClick={() => setUnit("")}>Tout</button>
+        {units.map((u) => <button key={u} style={chip(unit === u)} onClick={() => setUnit(unit === u ? "" : u)}>{u}</button>)}
+      </div>;
+    })()}
     <div className="body" style={{ padding: 0 }}>
       {loaded && items.length === 0 && !q && <p className="muted" style={{ padding: 16 }}>Aucune discussion. Touchez le bouton + ou cherchez une personne.</p>}
       {(() => {
         const nq = norm(q.trim());
-        const shown = nq ? items.filter((i) => norm(title(i)).includes(nq) || norm(i.last_text ?? "").includes(nq)) : items;
+        const byUnit = unit ? items.filter((i) => i.unit_name === unit) : items;
+        const shown = nq ? byUnit.filter((i) => norm(title(i)).includes(nq) || norm(i.last_text ?? "").includes(nq)) : byUnit;
         const haveDm = new Set(items.filter((i) => i.kind === "direct").map((i) => i.other_person));
         const found = nq ? members.filter((m) => m.person_id !== ctx.person_id && !haveDm.has(m.person_id) && norm(people[m.person_id]?.name ?? "").includes(nq)) : [];
         return (<>
@@ -101,7 +112,7 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
               <Avatar name={title(i)} src={i.kind === "direct" ? i.other_avatar : null} size={52} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                  <b style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title(i)}</b>
+                  <b style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title(i)}{i.unit_name && i.kind === "group" ? <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}> · {i.unit_name}</span> : null}</b>
                   <span className="muted" style={{ fontSize: 12, color: i.unread ? "var(--primary)" : undefined }}>{when(i.last_at)}</span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 2 }}>

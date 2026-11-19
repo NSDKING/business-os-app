@@ -73,7 +73,7 @@ export default function Home() {
 }
 
 function Reports({ ctx }: { ctx: Ctx }) {
-  const [drafts, setDrafts] = useState<(Draft & { rt?: string; src?: string; ev?: string })[]>([]);
+  const [drafts, setDrafts] = useState<(Draft & { rt?: string; src?: string; ev?: string; photo?: string })[]>([]);
   const [loaded, setLoaded] = useState(false);
   const load = useCallback(async () => {
     const { data: ds } = await supabase.from("draft").select("*").eq("business_id", ctx.business_id).eq("status", "proposed").order("created_at", { ascending: false });
@@ -83,12 +83,12 @@ function Reports({ ctx }: { ctx: Ctx }) {
         supabase.from("record_type").select("label").eq("id", d.record_type_id).single(),
         supabase.from("draft_source").select("message_id").eq("draft_id", d.id).limit(1),
       ]);
-      let src = "chat", ev = "";
+      let src = "chat", ev = "", photo: string | undefined;
       if (s?.length) {
-        const { data: m } = await supabase.from("message").select("text, kind, sender_label, sent_at").eq("id", s[0].message_id).single();
-        if (m) { src = `${m.sender_label} · ${new Date(m.sent_at).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}`; ev = m.kind === "image" ? (m.text || "Photo envoyée dans le chat") : m.text; }
+        const { data: m } = await supabase.from("message").select("text, kind, attachment, sender_label, sent_at").eq("id", s[0].message_id).single();
+        if (m) { src = `${m.sender_label} · ${new Date(m.sent_at).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}`; ev = m.kind === "image" ? (m.text || "Photo envoyée dans le chat") : m.text; if (m.kind === "image") photo = m.attachment ?? undefined; }
       }
-      out.push({ ...d, rt: rt?.label, src, ev });
+      out.push({ ...d, rt: rt?.label, src, ev, photo });
     }
     setDrafts(out); setLoaded(true);
   }, [ctx.business_id]);
@@ -102,7 +102,7 @@ function Reports({ ctx }: { ctx: Ctx }) {
   }, [load, ctx.business_id]);
   return (<div className="body">
     {loaded && drafts.length === 0 && <div className="card"><span className="pill ok">Tout est à jour</span><p className="muted">Aucun rapport à approuver.</p></div>}
-    {drafts.map((d) => <ReviewCard key={d.id} d={d} title={d.rt ?? "Rapport"} source={d.src ?? ""} evidence={d.ev ?? ""} onDone={load} />)}
+    {drafts.map((d) => <ReviewCard key={d.id} d={d} title={d.rt ?? "Rapport"} source={d.src ?? ""} evidence={d.ev ?? ""} photo={d.photo} onDone={load} />)}
   </div>);
 }
 

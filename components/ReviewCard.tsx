@@ -1,5 +1,6 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { mediaUrl } from "@/lib/media";
 import { supabase, type Draft } from "@/lib/supabase";
 
 type Row = Record<string, unknown>;
@@ -11,7 +12,8 @@ const LABELS: Record<string, string> = {
   size: "Taille", opening: "Début", production: "Prod.", sorties: "Sorties",
   closing_book: "Fin livre", closing_physical: "Fin réel", gap: "Écart",
   room: "Salle", eggs_8h: "8h", eggs_10h: "10h", eggs_12h: "12h", eggs_15h: "15h", eggs_total: "Total",
-  quantity: "Qté", item: "Article",
+  quantity: "Qté", item: "Article", requested_by: "Demandé par", kind: "Type", payment: "Paiement", due: "Échéance",
+  site: "Site", summary: "Résumé", mortality: "Poules mortes", present: "Présents", absent: "Absents", name: "Nom", status: "Statut", destination: "Destination", amount_fcfa: "Montant (FCFA)", method: "Moyen",
 };
 const label = (k: string) => LABELS[k] ?? k;
 const num = (v: unknown) => (typeof v === "number" ? v : v === "" || v == null ? null : Number(v));
@@ -25,6 +27,20 @@ function flags(rows: Row[]): Set<string> {
     if (b != null && ph != null && g != null && ph - b !== g) { bad.add(`${i}.gap`); bad.add(`${i}.closing_physical`); }
   });
   return bad;
+}
+
+function Evidence({ path }: { path: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [big, setBig] = useState(false);
+  useEffect(() => { let on = true; mediaUrl(path).then((u) => on && setUrl(u)).catch(() => {}); return () => { on = false; }; }, [path]);
+  if (!url) return null;
+  return (<>
+    {/* eslint-disable-next-line @next/next/no-img-element */}
+    <img src={url} alt="Document envoyé" onClick={() => setBig(true)} style={{ width: "100%", maxHeight: 260, objectFit: "cover", objectPosition: "top", borderRadius: 10, border: "1px solid var(--line)", cursor: "zoom-in" }} />
+    {big && <div onClick={() => setBig(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.88)", zIndex: 50, overflow: "auto", cursor: "zoom-out" }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={url} alt="Document" style={{ width: "100%", display: "block" }} /></div>}
+  </>);
 }
 
 function Table({ rows, editing, bad, field, onCell }: {
@@ -55,8 +71,8 @@ function Table({ rows, editing, bad, field, onCell }: {
   );
 }
 
-export default function ReviewCard({ d, title, source, evidence, onDone }: {
-  d: Draft; title: string; source: string; evidence: string; onDone: () => void;
+export default function ReviewCard({ d, title, source, evidence, photo, onDone }: {
+  d: Draft; title: string; source: string; evidence: string; photo?: string; onDone: () => void;
 }) {
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
   const [editing, setEditing] = useState(false);
@@ -114,6 +130,7 @@ export default function ReviewCard({ d, title, source, evidence, onDone }: {
       {d.questions.length > 0 && <div className="quote">À vérifier : {d.questions.join(" · ")}</div>}
 
       <div className="muted" style={{ marginTop: 10 }}>Message d'origine</div>
+      {photo ? <Evidence path={photo} /> : null}
       <div className="quote">“{evidence}”</div>
       {pct != null && <div className="muted">Confiance de l'IA : {level} ({pct}%) · Vérifiez avant d'approuver</div>}
       {err && <p style={{ color: "var(--error)" }}>{err}</p>}
