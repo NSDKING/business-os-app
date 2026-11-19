@@ -25,7 +25,7 @@ export default function PaymentLink({ businessId, paymentId, customer, onDone }:
       const [{ data: rts }, { data: rs }, { data: used }] = await Promise.all([
         supabase.from("record_type").select("id, name").eq("business_id", businessId),
         supabase.from("current_record").select("id, record_type_id, fields, occurred_at").eq("business_id", businessId).gte("occurred_at", since).order("occurred_at", { ascending: false }),
-        supabase.from("stock_hold").select("order_record_id").eq("business_id", businessId).not("order_record_id", "is", null),
+        supabase.from("stock_hold").select("order_record_id").eq("business_id", businessId).neq("state", "cancelled").not("order_record_id", "is", null),
       ]);
       const name = new Map((rts ?? []).map((r) => [r.id, r.name]));
       const taken = new Set((used ?? []).map((u) => u.order_record_id));

@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { Ctx } from "./Chats";
+import PaymentLink from "./PaymentLink";
 
 type Row = { size: string; opening: number; production: number; sorties: number; closing_book: number; closing_physical: number; gap: number };
 type Sheet = { date: string; d: Date; rows: Row[]; trays: number };
 type Inv = { item: string; on_hand: number | null; pending: number; available: number | null };
 type Hold = { payment_record_id: string; customer: string | null; item: string; quantity: number; unit: string; created_at: string };
-type Pay = { at: Date; customer: string; amount: number; method: string };
+type Pay = { id: string; at: Date; customer: string; amount: number; method: string };
 
 // Same colour for the same size everywhere (reference categorical palette, slots 1 to 3).
 const SIZE_COLOR: Record<string, string> = { G: "#2a78d6", M: "#eb6834", P: "#1baf7a" };
@@ -30,26 +31,28 @@ function Icon({ kind }: { kind: "warn" }) {
 
 export default function Business({ ctx }: { ctx: Ctx }) {
   const [sheets, setSheets] = useState<Sheet[]>([]); const [pays, setPays] = useState<Pay[]>([]);
-  const [inv, setInv] = useState<Inv[]>([]); const [holds, setHolds] = useState<Hold[]>([]); const [busyPay, setBusyPay] = useState<string | null>(null);
+  const [inv, setInv] = useState<Inv[]>([]); const [holds, setHolds] = useState<Hold[]>([]); const [busyPay, setBusyPay] = useState<string | null>(null); const [linked, setLinked] = useState<Set<string>>(new Set()); const [linking, setLinking] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false); const [sel, setSel] = useState<number | null>(null); const [table, setTable] = useState(false);
 
   const load = useCallback(async () => {
     const since = new Date(Date.now() - 16 * 86400000).toISOString();
     const [{ data: rts }, { data: rs }] = await Promise.all([
       supabase.from("record_type").select("id, name").eq("business_id", ctx.business_id),
-      supabase.from("current_record").select("record_type_id, fields, occurred_at").eq("business_id", ctx.business_id).gte("occurred_at", since).order("occurred_at"),
+      supabase.from("current_record").select("id, record_type_id, fields, occurred_at").eq("business_id", ctx.business_id).gte("occurred_at", since).order("occurred_at"),
     ]);
-    const [{ data: iv }, { data: hs }] = await Promise.all([
+    const [{ data: iv }, { data: hs }, { data: lk }] = await Promise.all([
       supabase.rpc("inventory_summary", { p_business: ctx.business_id }),
       supabase.from("stock_hold").select("payment_record_id, customer, item, quantity, unit, created_at").eq("business_id", ctx.business_id).eq("state", "pending_delivery").order("created_at", { ascending: false }),
+      supabase.from("stock_hold").select("payment_record_id").eq("business_id", ctx.business_id).neq("state", "cancelled"),
     ]);
+    setLinked(new Set((lk ?? []).map((x) => x.payment_record_id)));
     setInv((iv as Inv[]) ?? []); setHolds((hs as Hold[]) ?? []);
     const name = new Map((rts ?? []).map((r) => [r.id, r.name]));
     const sh: Sheet[] = [], py: Pay[] = [];
     for (const r of rs ?? []) {
       const t = name.get(r.record_type_id); const f = r.fields as Record<string, unknown>;
       if (t === "daily_production_sheet" && typeof f.date === "string") sh.push({ date: f.date, d: parseDate(f.date), rows: (f.stock as Row[]) ?? [], trays: Number(f.sorties_trays ?? 0) });
-      if (t === "payment") py.push({ at: new Date(r.occurred_at), customer: String(f.customer ?? ""), amount: Number(f.amount_fcfa ?? 0), method: String(f.method ?? "") });
+      if (t === "payment") py.push({ id: r.id, at: new Date(r.occurred_at), customer: String(f.customer ?? ""), amount: Number(f.amount_fcfa ?? 0), method: String(f.method ?? "") });
     }
     sh.sort((a, b) => a.d.getTime() - b.d.getTime());
     setSheets(sh.slice(-14)); setPays(py.sort((a, b) => b.at.getTime() - a.at.getTime())); setLoaded(true);
@@ -106,8 +109,21 @@ export default function Business({ ctx }: { ctx: Ctx }) {
             return <div className="fact" key={pid} style={{ alignItems: "center", gap: 8 }}>
               <span style={{ flex: 1 }}><b>{hs[0].customer ?? "—"}</b><div className="muted">{hs.map((h) => `${h.quantity} ${h.item === "poulet" ? "poulets" : h.item}`).join(" · ")}</div></span>
               <button disabled={busyPay === pid} style={{ minHeight: 40 }} onClick={async () => { setBusyPay(pid); await supabase.rpc("mark_delivered_payment", { p_payment: pid }); setBusyPay(null); load(); }}>Marquer livré</button>
+              <button disabled={busyPay === pid} style={{ minHeight: 40 }} onClick={async () => { if (!confirm("Annuler le lien ? La marchandise redevient disponible.")) return; setBusyPay(pid); await supabase.rpc("unlink_payment", { p_payment: pid }); setBusyPay(null); load(); }}>Annuler le lien</button>
             </div>; })}
         </div>}
+        {(() => {
+          const free = pays.filter((p) => !linked.has(p.id)).slice(0, 5);
+          if (!free.length) return null;
+          return <div style={{ marginTop: 12 }}>
+            <div className="muted" style={{ fontWeight: 600 }}>Paiements pas encore liés à une commande</div>
+            {free.map((p) => linking === p.id
+              ? <PaymentLink key={p.id} businessId={ctx.business_id} paymentId={p.id} customer={p.customer} onDone={() => { setLinking(null); load(); }} />
+              : <div className="fact" key={p.id} style={{ alignItems: "center", gap: 8 }}>
+                  <span style={{ flex: 1 }}><b>{p.customer || "—"}</b><div className="muted">{short(p.at)} · {n0(p.amount)} FCFA · {p.method}</div></span>
+                  <button style={{ minHeight: 40 }} onClick={() => setLinking(p.id)}>Lier</button></div>)}
+          </div>;
+        })()}
       </div>}
 
       <div className="card">
