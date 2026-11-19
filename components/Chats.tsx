@@ -195,6 +195,7 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, chats, focu
   const press = useRef<number | undefined>(undefined);
   const focused = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const focusInput = () => setTimeout(() => inputRef.current?.focus(), 0);
 
   const load = useCallback(async () => {
     const { data } = await supabase.from("message").select("*, message_tag(tag_id), message_reaction(member_id,kind), message_pin(message_id)").eq("channel_id", id).order("sent_at").limit(300);
@@ -286,7 +287,7 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, chats, focu
       window.clearTimeout(press.current);
       const done = dxRef.current >= 60 && start.current !== null;
       start.current = null; dxRef.current = 0; setDrag(null);
-      if (done) { const m = msgs.find((x) => x.id === mid); if (m) { setReplyTo(m); setTimeout(() => inputRef.current?.focus(), 0); } }
+      if (done) { const m = msgs.find((x) => x.id === mid); if (m) { setReplyTo(m); focusInput(); } }
     },
     onPointerCancel: () => { window.clearTimeout(press.current); start.current = null; dxRef.current = 0; setDrag(null); },
     onContextMenu: (e: React.MouseEvent) => { e.preventDefault(); open(mid); },
@@ -382,8 +383,8 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, chats, focu
         myReactions={new Set((m.message_reaction ?? []).filter((r) => r.member_id === me).map((r) => r.kind))}
         saved={saved.has(m.id)} pinned={isPinned(m)} canForward={m.kind === "text"} note={sheetNote} tagOnly={tagOnly}
         targets={chats.filter((c) => c.channel_id !== id).map((c) => ({ id: c.channel_id, name: title(c) }))}
-        onClose={() => setMenu(null)} onReply={() => { setReplyTo(m); setMenu(null); }}
-        onTag={(t) => toggleTag(m, t)} onNewTag={(nm) => newTag(m, nm)} onReact={(k) => react(m, k)}
+        onClose={() => setMenu(null)} onReply={() => { setReplyTo(m); setMenu(null); focusInput(); }}
+        onTag={(t) => { setMenu(null); focusInput(); toggleTag(m, t); }} onNewTag={(nm) => { setMenu(null); focusInput(); newTag(m, nm); }} onReact={(k) => react(m, k)}
         onSave={() => toggleSave(m)} onPin={() => togglePin(m)} onForward={(c) => forward(m, c)}
         onCopy={() => { navigator.clipboard?.writeText(m.text).catch(() => {}); setMenu(null); }} />; })()}
     {recording !== null ? (
