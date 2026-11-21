@@ -15,7 +15,8 @@ export default function Demo() {
         if (error || !data.session) return setErr(error?.message || "Connexion impossible.");
         session = data.session;
       }
-      const { error } = await supabase.rpc("enter_demo");
+      const kind = new URLSearchParams(window.location.search).get("d") === "tv" ? "tv" : "farm";
+      const { error } = await supabase.rpc("enter_demo", { p_demo: kind });
       if (error) return setErr("La démo n'est pas disponible pour le moment.");
       window.location.href = "/";
     })();

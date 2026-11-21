@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { Ctx } from "./Chats";
 import PaymentLink from "./PaymentLink";
+import BusinessTv from "./BusinessTv";
 
 type Row = { size: string; opening: number; production: number; sorties: number; closing_book: number; closing_physical: number; gap: number };
 type Sheet = { date: string; d: Date; rows: Row[]; trays: number };
@@ -29,7 +30,17 @@ function Icon({ kind }: { kind: "warn" }) {
   return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ verticalAlign: "-3px" }}><path d="M12 3l10 18H2z" /><path d="M12 10v5M12 18.5v.5" /></svg>;
 }
 
+// A business that logs advertising spots is a TV channel (P-014): it gets its own figures.
 export default function Business({ ctx }: { ctx: Ctx }) {
+  const [kind, setKind] = useState<"farm" | "tv" | null>(null);
+  useEffect(() => {
+    supabase.from("record_type").select("name").eq("business_id", ctx.business_id).eq("name", "ad_spot_log").then(({ data }) => setKind(data && data.length ? "tv" : "farm"));
+  }, [ctx.business_id]);
+  if (!kind) return <div className="body muted">Chargement…</div>;
+  return kind === "tv" ? <BusinessTv ctx={ctx} /> : <BusinessFarm ctx={ctx} />;
+}
+
+function BusinessFarm({ ctx }: { ctx: Ctx }) {
   const [sheets, setSheets] = useState<Sheet[]>([]); const [pays, setPays] = useState<Pay[]>([]);
   const [inv, setInv] = useState<Inv[]>([]); const [holds, setHolds] = useState<Hold[]>([]); const [busyPay, setBusyPay] = useState<string | null>(null); const [linked, setLinked] = useState<Set<string>>(new Set()); const [linking, setLinking] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false); const [sel, setSel] = useState<number | null>(null); const [table, setTable] = useState(false);
@@ -200,7 +211,7 @@ function Tile({ label, value, note }: { label: string; value: string; note?: str
     {note && <div className="muted" style={{ fontSize: 11 }}>{note}</div>}</div>;
 }
 
-function Ask({ ctx }: { ctx: Ctx }) {
+export function Ask({ ctx, hints, example }: { ctx: Ctx; hints?: string[]; example?: string }) {
   const [q, setQ] = useState(""); const [busy, setBusy] = useState(false);
   const [out, setOut] = useState<{ answer: string; sources: string[] } | null>(null); const [err, setErr] = useState("");
   async function ask(text?: string) {
@@ -217,9 +228,9 @@ function Ask({ ctx }: { ctx: Ctx }) {
     <div className="card">
       <h3 style={{ marginBottom: 2 }}>Poser une question</h3>
       <div className="muted" style={{ marginBottom: 8 }}>L'assistant répond uniquement avec les chiffres approuvés et dit d'où ils viennent.</div>
-      <input placeholder="Ex. : combien d'œufs M cette semaine ?" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && ask()} />
+      <input placeholder={example ?? "Ex. : combien d'œufs M cette semaine ?"} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && ask()} />
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "8px 0" }}>
-        {["Quel est le plus gros écart de stock ?", "Combien a-t-on encaissé cette semaine ?", "Quels clients ont reçu le plus d'alvéoles ?"].map((s) => <button key={s} onClick={() => ask(s)} style={{ minHeight: 36, padding: "4px 10px", fontSize: 13 }}>{s}</button>)}
+        {(hints ?? ["Quel est le plus gros écart de stock ?", "Combien a-t-on encaissé cette semaine ?", "Quels clients ont reçu le plus d'alvéoles ?"]).map((s) => <button key={s} onClick={() => ask(s)} style={{ minHeight: 36, padding: "4px 10px", fontSize: 13 }}>{s}</button>)}
       </div>
       <button className="primary big" disabled={busy || !q.trim()} onClick={() => ask()}>{busy ? "Je cherche…" : "Demander"}</button>
       {err && <p style={{ color: "var(--error)" }}>{err}</p>}
