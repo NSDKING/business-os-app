@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { Ctx } from "./Chats";
+import { invoicePdf } from "@/lib/invoicePdf";
 
 type Line = { label: string; qty: number; unit_price: number; total: number };
 type Inv = { id: string; number: string | null; customer: string; lines: Line[]; total_fcfa: number; vat_rate: number; vat_fcfa: number; ttc_fcfa: number | null; seller_niu: string | null; customer_niu: string | null; status: "draft" | "issued" | "void"; created_at: string; issued_at: string | null; source_record_id: string };
@@ -11,11 +12,6 @@ const n0 = (v: number) => Math.round(v).toLocaleString("fr-FR");
 const day = (iso: string) => new Date(iso).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
 const BILLABLE: Record<string, string> = { chicken_order: "Vente de poulets", loading_order: "Chargement d'œufs", ad_contract: "Contrat publicitaire" };
 const STATUS: Record<string, string> = { draft: "Brouillon", issued: "Émise", void: "Annulée" };
-
-function asText(i: Inv, biz: string) {
-  return [`${biz}`, `Facture ${i.number ?? "(brouillon)"} · ${i.issued_at ? day(i.issued_at) : day(i.created_at)}`, ...(i.seller_niu ? [`NIU vendeur : ${i.seller_niu}`] : []), `Client : ${i.customer}`, ...(i.customer_niu ? [`NIU client : ${i.customer_niu}`] : []), "",
-    ...i.lines.map((l) => `${l.label} : ${n0(l.qty)} × ${n0(l.unit_price)} = ${n0(l.total)} FCFA`), "", ...(i.vat_rate > 0 ? [`Total HT : ${n0(i.total_fcfa)} FCFA`, `TVA ${i.vat_rate} % : ${n0(i.vat_fcfa)} FCFA`] : []), `Total${i.vat_rate > 0 ? " TTC" : ""} : ${n0(i.ttc_fcfa ?? i.total_fcfa)} FCFA`].join("\n");
-}
 
 export default function Invoices({ ctx }: { ctx: Ctx }) {
   const [invs, setInvs] = useState<Inv[]>([]); const [cands, setCands] = useState<Cand[]>([]);
@@ -61,8 +57,12 @@ export default function Invoices({ ctx }: { ctx: Ctx }) {
     setSaved(error ? "Échec" : "Enregistré");
   }
   async function share(i: Inv) {
-    const text = asText(i, ctx.business);
-    try { if (navigator.share) return await navigator.share({ text }); await navigator.clipboard.writeText(text); setErr("Facture copiée."); } catch {}
+    setErr("");
+    try {
+      const file = await invoicePdf({ ...i, date: day(i.issued_at ?? i.created_at) }, ctx.business);
+      if (navigator.canShare?.({ files: [file] })) { try { await navigator.share({ files: [file], title: file.name }); return; } catch (e) { if ((e as Error).name === "AbortError") return; } }
+      const url = URL.createObjectURL(file); const a = document.createElement("a"); a.href = url; a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch { setErr("Impossible de créer le PDF."); }
   }
 
   return (<div className="body">
@@ -91,7 +91,7 @@ export default function Invoices({ ctx }: { ctx: Ctx }) {
         {i.vat_rate > 0 && <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>Total HT {n0(i.total_fcfa)} · TVA {i.vat_rate} % {n0(i.vat_fcfa)} · <b>TTC {n0(i.ttc_fcfa ?? i.total_fcfa)} FCFA</b></div>}
         {(i.seller_niu || i.customer_niu) && <div className="muted" style={{ fontSize: 12 }}>{i.seller_niu && `NIU vendeur ${i.seller_niu}`}{i.seller_niu && i.customer_niu && " · "}{i.customer_niu && `NIU client ${i.customer_niu}`}</div>}
         <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-          {i.status !== "void" && <button style={{ minHeight: 36 }} onClick={() => share(i)}>Partager</button>}
+          {i.status !== "void" && <button style={{ minHeight: 36 }} onClick={() => share(i)}>PDF</button>}
           {can && i.status === "draft" && <button className="primary" style={{ minHeight: 36 }} disabled={busy === i.id} onClick={() => run(i.id, () => supabase.rpc("issue_invoice", { p_id: i.id }))}>Émettre</button>}
           {can && i.status !== "void" && <button style={{ minHeight: 36 }} disabled={busy === i.id} onClick={() => { if (window.confirm("Annuler cette facture ?")) run(i.id, () => supabase.rpc("void_invoice", { p_id: i.id })); }}>Annuler</button>}
         </div>
