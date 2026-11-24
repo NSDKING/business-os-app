@@ -43,3 +43,19 @@ input::placeholder,textarea::placeholder{color:var(--muted)}
 .offline{background:var(--warn-bg);color:var(--warn-text);text-align:center;padding:6px;font-size:13px}
 
 .iconbtn{flex:none;border:0;background:transparent;color:var(--muted);min-height:40px;min-width:40px;padding:0;display:inline-flex;align-items:center;justify-content:center}
+
+/* Desktop (P-018 step 3): the bottom bar becomes a left sidebar and the content gets room. */
+.main{flex:1;min-height:0;display:flex;flex-direction:column}
+.tabs .brand,.tabs .grow,.tabs>button:last-child{display:none}
+.tabs.narrow-hide{display:none}
+@media(min-width:900px){
+  .shell{max-width:1180px;flex-direction:row;border-left:1px solid var(--line);border-right:1px solid var(--line)}
+  .tabs,.tabs.narrow-hide{order:-1;display:flex;flex-direction:column;width:230px;grid-template-columns:none;border-top:0;border-right:1px solid var(--line);padding:12px 10px;gap:4px;position:static}
+  .tabs .brand{display:block;font-weight:700;font-size:18px;color:var(--primary);padding:8px 12px 16px}
+  .tabs .grow{display:block;flex:1}
+  .tabs>button:last-child{display:flex}
+  .tabs button{flex-direction:row;justify-content:flex-start;gap:12px;font-size:15px;min-height:46px;padding:0 12px;border-radius:10px}
+  .tabs button.on{background:var(--soft);box-shadow:none}
+  .iconbtn{display:none}
+  .body{padding:20px 28px}
+}

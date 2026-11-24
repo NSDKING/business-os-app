@@ -76,6 +76,7 @@ export default function Home() {
   const gear = <button className="iconbtn" aria-label="Réglages" onClick={() => setTab("settings")}><Icon name="sliders" size={22} /></button>;
   return (
     <div className="shell">
+      <div className="main">
       {tab !== "messages" && <div className="top"><span>{tab === "settings" ? "Réglages" : ctx.business}</span><span style={{ display: "flex", alignItems: "center", gap: 8 }}><span className="muted" style={{ fontSize: 14, fontWeight: 400 }}>{ctx.name}</span>{tab !== "settings" && gear}</span></div>}
       {!online && <div className="offline">Hors ligne · vos messages partiront dès le retour du réseau{pendingN ? ` (${pendingN})` : ""}</div>}
       {tab === "messages" && <MessagesArea ctx={ctx} online={online} isAdmin={isAdmin} onQueue={() => setPendingN(readQueue().length)} onFull={setFull} full={full} gear={gear} />}
@@ -84,10 +85,14 @@ export default function Home() {
       {tab === "business" && <Catalogue ctx={ctx} />}
       {tab === "insights" && <Business ctx={ctx} />}
       {tab === "settings" && <Settings ctx={ctx} />}
-      {!hideBar && <div className="tabs">
+      </div>
+      <div className={"tabs" + (hideBar ? " narrow-hide" : "")}>
+        <div className="brand">{ctx.business}</div>
         {TABS.map(({ t, label, icon }) => (
           <button key={t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}><Icon name={icon} size={22} />{label}</button>))}
-      </div>}
+        <div className="grow" />
+        <button className={tab === "settings" ? "on" : ""} onClick={() => setTab("settings")}><Icon name="sliders" size={22} />Réglages</button>
+      </div>
     </div>
   );
 }
