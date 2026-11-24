@@ -79,7 +79,7 @@ function BusinessFarm({ ctx }: { ctx: Ctx }) {
   const now = sheets[sheets.length - 1];
 
   if (!loaded) return <div className="body muted">Chargement…</div>;
-  if (!sheets.length) return <div className="body"><div className="card"><h3>Business</h3><p className="muted">Aucun chiffre approuvé pour l'instant. Approuvez des rapports dans l'onglet Rapports et ils apparaîtront ici.</p></div><Ask ctx={ctx} /></div>;
+  if (!sheets.length) return <div className="body"><div className="card"><h3>Insights</h3><p className="muted">Aucun chiffre approuvé pour l'instant. Approuvez des rapports dans l'onglet Rapports et ils apparaîtront ici.</p></div><Ask ctx={ctx} /></div>;
 
   // chart geometry
   const W = 340, H = 190, L = 34, B = 24, T = 8, bw = (W - L) / sheets.length;

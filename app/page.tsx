@@ -16,7 +16,7 @@ import Icon from "@/components/Icon";
 import Avatar from "@/components/Avatar";
 import { toAvatar } from "@/lib/image";
 
-type Tab = "chat" | "reports" | "business" | "settings";
+type Tab = "messages" | "drafts" | "documents" | "business" | "insights" | "settings";
 type Ctx = { business_id: string; business: string; person_id: string; name: string; others?: { business_id: string; business: string }[] };
 
 export default function Home() {
@@ -28,7 +28,7 @@ export default function Home() {
     return () => { vv?.removeEventListener("resize", fit); vv?.removeEventListener("scroll", fit); window.removeEventListener("orientationchange", fit); };
   }, []);
   const [ctx, setCtx] = useState<Ctx | null | undefined>(undefined);
-  const [tab, setTab] = useState<Tab>("chat");
+  const [tab, setTab] = useState<Tab>("messages");
   const [online, setOnline] = useState(true);
   const [pendingN, setPendingN] = useState(0);
   const [full, setFull] = useState(false);
@@ -69,34 +69,38 @@ export default function Home() {
       <div className="body"><div className="card"><h3>Accès sur invitation</h3>
         <p className="muted">Ouvrez le lien d'invitation que le propriétaire vous a envoyé sur WhatsApp.</p></div></div></div>);
 
+  const TABS: { t: Tab; label: string; icon: "chat" | "clipboard" | "doc" | "briefcase" | "chart" }[] = [
+    { t: "messages", label: "Messages", icon: "chat" }, { t: "drafts", label: "Drafts", icon: "clipboard" }, { t: "documents", label: "Documents", icon: "doc" },
+    { t: "business", label: "Business", icon: "briefcase" }, { t: "insights", label: "Insights", icon: "chart" }];
+  const hideBar = tab === "messages" && full;
+  const gear = <button className="iconbtn" aria-label="Réglages" onClick={() => setTab("settings")}><Icon name="sliders" size={22} /></button>;
   return (
     <div className="shell">
-      {!(tab === "chat" && full) && tab !== "chat" && <div className="top"><span>{ctx.business}</span><span className="muted">{ctx.name}</span></div>}
+      {tab !== "messages" && <div className="top"><span>{tab === "settings" ? "Réglages" : ctx.business}</span><span style={{ display: "flex", alignItems: "center", gap: 8 }}><span className="muted" style={{ fontSize: 14, fontWeight: 400 }}>{ctx.name}</span>{tab !== "settings" && gear}</span></div>}
       {!online && <div className="offline">Hors ligne · vos messages partiront dès le retour du réseau{pendingN ? ` (${pendingN})` : ""}</div>}
-      {tab === "chat" && <Chats ctx={ctx} online={online} isAdmin={isAdmin} onQueue={() => setPendingN(readQueue().length)} onFull={setFull} />}
-      {tab === "reports" && <Reports ctx={ctx} />}
-      {tab === "business" && <BusinessArea ctx={ctx} />}
+      {tab === "messages" && <MessagesArea ctx={ctx} online={online} isAdmin={isAdmin} onQueue={() => setPendingN(readQueue().length)} onFull={setFull} full={full} gear={gear} />}
+      {tab === "drafts" && <Reports ctx={ctx} />}
+      {tab === "documents" && <Invoices ctx={ctx} />}
+      {tab === "business" && <Catalogue ctx={ctx} />}
+      {tab === "insights" && <Business ctx={ctx} />}
       {tab === "settings" && <Settings ctx={ctx} />}
-      {!(tab === "chat" && full) && <div className="tabs">
-        {(["chat", "reports", "business", "settings"] as Tab[]).map((t) => (
-          <button key={t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>
-            <Icon name={{ chat: "chat", reports: "clipboard", business: "briefcase", settings: "sliders" }[t] as "chat"} size={22} />{{ chat: "Chat", reports: "Rapports", business: "Business", settings: "Réglages" }[t]}
-          </button>))}
+      {!hideBar && <div className="tabs">
+        {TABS.map(({ t, label, icon }) => (
+          <button key={t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}><Icon name={icon} size={22} />{label}</button>))}
       </div>}
     </div>
   );
 }
 
-function BusinessArea({ ctx }: { ctx: Ctx }) {
-  const [v, setV] = useState<"figures" | "directory" | "invoices" | "chats">("figures");
+function MessagesArea({ ctx, online, isAdmin, onQueue, onFull, full, gear }: { ctx: Ctx; online: boolean; isAdmin: boolean; onQueue: () => void; onFull: (v: boolean) => void; full: boolean; gear: React.ReactNode }) {
+  const [v, setV] = useState<"team" | "customers">("team");
   return (<>
-    <div style={{ display: "flex", gap: 6, padding: "8px 12px 0" }}>
-      <button className={v === "figures" ? "primary" : ""} style={{ flex: 1, minHeight: 38 }} onClick={() => setV("figures")}>Chiffres</button>
-      <button className={v === "directory" ? "primary" : ""} style={{ flex: 1, minHeight: 38 }} onClick={() => setV("directory")}>Répertoire</button>
-      <button className={v === "invoices" ? "primary" : ""} style={{ flex: 1, minHeight: 38 }} onClick={() => setV("invoices")}>Factures</button>
-      <button className={v === "chats" ? "primary" : ""} style={{ flex: 1, minHeight: 38 }} onClick={() => setV("chats")}>Clients IA</button>
-    </div>
-    {v === "figures" ? <Business ctx={ctx} /> : v === "directory" ? <Catalogue ctx={ctx} /> : v === "invoices" ? <Invoices ctx={ctx} /> : <Discussions ctx={ctx} />}
+    {!full && <div style={{ display: "flex", gap: 6, padding: "8px 12px 0", alignItems: "center" }}>
+      <button className={v === "team" ? "primary" : ""} style={{ flex: 1, minHeight: 38 }} onClick={() => setV("team")}>Équipe</button>
+      <button className={v === "customers" ? "primary" : ""} style={{ flex: 1, minHeight: 38 }} onClick={() => setV("customers")}>Clients</button>
+      {gear}
+    </div>}
+    {v === "team" || full ? <Chats ctx={ctx} online={online} isAdmin={isAdmin} onQueue={onQueue} onFull={onFull} /> : <Discussions ctx={ctx} />}
   </>);
 }
 

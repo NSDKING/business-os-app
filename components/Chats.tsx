@@ -329,8 +329,8 @@ function Convo({ ctx, item, people, online, onQueue, onBack, onInfo, onRead, mem
     const r = (data ?? {}) as { drafts?: number; skipped?: string; error?: string };
     if (error || r.error) return setSheetNote("L'IA n'est pas disponible pour le moment.");
     setMenu(null);
-    setNote(r.drafts ? `${r.drafts} rapport${r.drafts > 1 ? "s" : ""} proposé${r.drafts > 1 ? "s" : ""} : à valider dans l'onglet Rapports.`
-      : r.skipped === "done" ? "Ce message a déjà été lu par l'IA : voir l'onglet Rapports."
+    setNote(r.drafts ? `${r.drafts} rapport${r.drafts > 1 ? "s" : ""} proposé${r.drafts > 1 ? "s" : ""} : à valider dans l'onglet Drafts.`
+      : r.skipped === "done" ? "Ce message a déjà été lu par l'IA : voir l'onglet Drafts."
       : r.skipped === "direct" ? "Les discussions privées ne sont pas lues par l'IA."
       : "L'IA n'a rien trouvé à enregistrer dans ce message.");
   }

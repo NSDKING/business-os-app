@@ -58,7 +58,7 @@ export default function BusinessTv({ ctx }: { ctx: Ctx }) {
   }, [logs, pays, contracts, inc]);
 
   if (!loaded) return <div className="body muted">Chargement…</div>;
-  if (!logs.length && !contracts.length) return <div className="body"><div className="card"><h3>Business</h3><p className="muted">Aucun chiffre approuvé pour l'instant. Approuvez des rapports dans l'onglet Rapports et ils apparaîtront ici.</p></div><Ask ctx={ctx} /></div>;
+  if (!logs.length && !contracts.length) return <div className="body"><div className="card"><h3>Insights</h3><p className="muted">Aucun chiffre approuvé pour l'instant. Approuvez des rapports dans l'onglet Rapports et ils apparaîtront ici.</p></div><Ask ctx={ctx} /></div>;
 
   const W = 340, H = 170, L = 30, B = 24, T = 8, bw = (W - L) / Math.max(logs.length, 1);
   const maxV = Math.max(1, ...logs.map((x) => x.planned)), top = Math.ceil(maxV / 5) * 5;
