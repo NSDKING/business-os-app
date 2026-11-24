@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { Ctx } from "./Chats";
 import { Ask } from "./Business";
+import SlotGrid from "./SlotGrid";
 
 type Log = { d: Date; planned: number; aired: number; rows: { advertiser: string; planned: number; aired: number; missed: number }[] };
 type Contract = { advertiser: string; spots: number; price: number };
@@ -120,6 +121,7 @@ export default function BusinessTv({ ctx }: { ctx: Ctx }) {
           <span>{p.customer}<div className="muted" style={{ fontSize: 12 }}>{short(p.at)} · {p.method}</div></span><b style={{ whiteSpace: "nowrap" }}>{n0(p.amount)} FCFA</b></div>)}
       </div>
 
+      <SlotGrid ctx={ctx} />
       <Ask ctx={ctx} example="Ex. : combien de passages manqués cette semaine ?" hints={["Quels annonceurs n'ont pas tout payé ce mois ?", "Combien de passages manqués à rediffuser ?", "Combien de minutes d'antenne perdues ?"]} />
     </div>
   );
