@@ -1,6 +1,6 @@
 "use client";
 // Public customer chat (P-017): no login. The visitor keeps a random token in this browser.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 
 type Msg = { role: "customer" | "ai" | "staff"; text: string; created_at: string };
@@ -11,7 +11,7 @@ function getToken() {
   catch { return crypto.randomUUID() + crypto.randomUUID().slice(0, 8); }
 }
 
-export default function PublicChat() {
+function Chat() {
   const { slug } = useParams<{ slug: string }>();
   const [name, setName] = useState(""); const [msgs, setMsgs] = useState<Msg[]>([]); const [status, setStatus] = useState("ai");
   const [text, setText] = useState(""); const [busy, setBusy] = useState(false); const [err, setErr] = useState(""); const [missing, setMissing] = useState(false);
@@ -65,4 +65,8 @@ export default function PublicChat() {
       </div>
     </div>
   );
+}
+
+export default function PublicChat() {
+  return <Suspense fallback={<div className="shell"><div className="body muted">Chargement…</div></div>}><Chat /></Suspense>;
 }
