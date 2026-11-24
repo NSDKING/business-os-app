@@ -7,6 +7,8 @@ import Approvers from "@/components/Approvers";
 import Compliance from "@/components/Compliance";
 import Notifications from "@/components/Notifications";
 import Business from "@/components/Business";
+import Catalogue from "@/components/Catalogue";
+import AddSheet from "@/components/AddSheet";
 import Chats from "@/components/Chats";
 import Avatar from "@/components/Avatar";
 import { toAvatar } from "@/lib/image";
@@ -70,7 +72,7 @@ export default function Home() {
       {!online && <div className="offline">Hors ligne · vos messages partiront dès le retour du réseau{pendingN ? ` (${pendingN})` : ""}</div>}
       {tab === "chat" && <Chats ctx={ctx} online={online} isAdmin={isAdmin} onQueue={() => setPendingN(readQueue().length)} onFull={setFull} />}
       {tab === "reports" && <Reports ctx={ctx} />}
-      {tab === "business" && <Business ctx={ctx} />}
+      {tab === "business" && <BusinessArea ctx={ctx} />}
       {tab === "settings" && <Settings ctx={ctx} />}
       {!(tab === "chat" && full) && <div className="tabs">
         {(["chat", "reports", "business", "settings"] as Tab[]).map((t) => (
@@ -82,7 +84,19 @@ export default function Home() {
   );
 }
 
+function BusinessArea({ ctx }: { ctx: Ctx }) {
+  const [v, setV] = useState<"figures" | "directory">("figures");
+  return (<>
+    <div style={{ display: "flex", gap: 6, padding: "8px 12px 0" }}>
+      <button className={v === "figures" ? "primary" : ""} style={{ flex: 1, minHeight: 38 }} onClick={() => setV("figures")}>Chiffres</button>
+      <button className={v === "directory" ? "primary" : ""} style={{ flex: 1, minHeight: 38 }} onClick={() => setV("directory")}>Répertoire</button>
+    </div>
+    {v === "figures" ? <Business ctx={ctx} /> : <Catalogue ctx={ctx} />}
+  </>);
+}
+
 function Reports({ ctx }: { ctx: Ctx }) {
+  const [adding, setAdding] = useState(false);
   const [drafts, setDrafts] = useState<(Draft & { rt?: string; src?: string; ev?: string; photo?: string })[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [rights, setRights] = useState<{ all: boolean; types: Set<string>; byType: Map<string, string[]>; everyone: string[] }>({ all: false, types: new Set(), byType: new Map(), everyone: [] });
@@ -110,6 +124,7 @@ function Reports({ ctx }: { ctx: Ctx }) {
         supabase.from("draft_source").select("message_id").eq("draft_id", d.id).limit(1),
       ]);
       let src = "chat", ev = "", photo: string | undefined;
+      if (d.model === "manual") { src = "Saisie manuelle"; ev = "Information saisie à la main : aucune photo ni message à comparer."; }
       if (s?.length) {
         const { data: m } = await supabase.from("message").select("text, kind, attachment, sender_label, sent_at").eq("id", s[0].message_id).single();
         if (m) { src = `${m.sender_label} · ${new Date(m.sent_at).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}`; ev = m.kind === "deleted" ? "Message supprimé depuis : vérifiez avant d'approuver." : m.kind === "image" ? (m.text || "Photo envoyée dans le chat") : m.text; if (m.kind === "image") photo = m.attachment ?? undefined; }
@@ -127,6 +142,8 @@ function Reports({ ctx }: { ctx: Ctx }) {
     return () => { supabase.removeChannel(sub); };
   }, [load, ctx.business_id]);
   return (<div className="body">
+    <button className="primary big" onClick={() => setAdding(true)}>+ Ajouter une information</button>
+    {adding && <AddSheet ctx={ctx} onClose={() => setAdding(false)} onDone={load} />}
     {loaded && drafts.length === 0 && <div className="card"><span className="pill ok">Tout est à jour</span><p className="muted">Aucun rapport à approuver.</p></div>}
     {drafts.map((d) => <ReviewCard key={d.id} d={d} canApprove={rights.all || rights.types.has(d.record_type_id)} approvers={[...new Set([...rights.everyone, ...(rights.byType.get(d.record_type_id) ?? [])])]} title={d.rt ?? "Rapport"} source={d.src ?? ""} evidence={d.ev ?? ""} photo={d.photo} onDone={load} />)}
   </div>);
