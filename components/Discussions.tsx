@@ -60,7 +60,7 @@ export default function Discussions({ ctx }: { ctx: Ctx }) {
       <div className="muted" style={{ fontSize: 12 }}>{cur.customer_phone || "téléphone inconnu"}{cur.handoff_reason ? ` · ${cur.handoff_reason}` : ""}</div>
       {msgs.map((m) => <div key={m.id} style={{ margin: "8px 0", textAlign: m.role === "customer" ? "left" : "right" }}>
         <div className="muted" style={{ fontSize: 11 }}>{m.role === "customer" ? "Client" : m.role === "ai" ? "Assistant IA" : "Équipe"} · {when(m.created_at)}</div>
-        <div style={{ display: "inline-block", maxWidth: "90%", padding: "6px 10px", borderRadius: 12, background: m.role === "customer" ? "var(--soft)" : "#e6f0fc", whiteSpace: "pre-wrap", textAlign: "left" }}>{m.text}</div></div>)}
+        <div style={{ display: "inline-block", maxWidth: "90%", padding: "6px 10px", borderRadius: 12, background: m.role === "customer" ? "var(--soft)" : "var(--soft)", whiteSpace: "pre-wrap", textAlign: "left" }}>{m.text}</div></div>)}
       {can && <>
         <p><input placeholder="Votre réponse au client" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && reply()} /></p>
         {err && <p style={{ color: "var(--error)" }}>{err}</p>}

@@ -12,6 +12,7 @@ import AddSheet from "@/components/AddSheet";
 import Discussions from "@/components/Discussions";
 import Invoices from "@/components/Invoices";
 import Chats from "@/components/Chats";
+import Icon from "@/components/Icon";
 import Avatar from "@/components/Avatar";
 import { toAvatar } from "@/lib/image";
 
@@ -79,7 +80,7 @@ export default function Home() {
       {!(tab === "chat" && full) && <div className="tabs">
         {(["chat", "reports", "business", "settings"] as Tab[]).map((t) => (
           <button key={t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>
-            {{ chat: "Chat", reports: "Rapports", business: "Business", settings: "Réglages" }[t]}
+            <Icon name={{ chat: "chat", reports: "clipboard", business: "briefcase", settings: "sliders" }[t] as "chat"} size={22} />{{ chat: "Chat", reports: "Rapports", business: "Business", settings: "Réglages" }[t]}
           </button>))}
       </div>}
     </div>
@@ -160,6 +161,8 @@ function Settings({ ctx }: { ctx: Ctx }) {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [team, setTeam] = useState<{ member_id: string; name: string; avatar: string | null; chans: Set<string> }[]>([]);
   const [saved, setSaved] = useState("");
+  const [theme, setTheme] = useState("light");
+  useEffect(() => { try { setTheme(localStorage.getItem("bos.theme") ?? "light"); } catch {} }, []);
 
   const loadTeam = useCallback(async () => {
     const [{ data: ms }, { data: ps }, { data: cm }, { data: cs }, { data: me2 }] = await Promise.all([
@@ -215,6 +218,12 @@ function Settings({ ctx }: { ctx: Ctx }) {
       </div>
     </div>
     <Notifications businessId={ctx.business_id} />
+    <div className="card"><h3>Apparence</h3>
+      <p className="muted">Clair par défaut. Le mode sombre repose les yeux le soir.</p>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {([["light", "Clair"], ["dark", "Sombre"], ["system", "Comme le téléphone"]] as const).map(([k, l]) => <button key={k} className={theme === k ? "primary" : ""}
+          onClick={() => { try { localStorage.setItem("bos.theme", k); } catch {} setTheme(k); document.documentElement.dataset.theme = k === "system" ? (matchMedia("(prefers-color-scheme:dark)").matches ? "dark" : "light") : k; }}>{l}</button>)}
+      </div></div>
     {(ctx.others?.length ?? 0) > 1 && <div className="card"><h3>Entreprise</h3>
       <p className="muted">Passez de votre entreprise réelle à la démonstration.</p>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

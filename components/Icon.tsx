@@ -26,6 +26,9 @@ const P: Record<string, React.ReactNode> = {
   tag: <><path d="M3 12V4h8l10 10-8 8z" /><circle cx="7.5" cy="8.5" r="1.2" /></>,
   thumb: <path d="M7 11v9H4v-9zM7 11l4-7c1.5 0 2.5 1 2 2.5L12.5 9H19a1.5 1.5 0 011.5 1.8l-1.3 7.5A2 2 0 0117.2 20H7" />,
   check: <path d="M5 12.5l4.5 4.5L19 7.5" />,
+  chat: <path d="M21 12a8 8 0 01-11.5 7.2L4 20l1-4.5A8 8 0 1121 12z" />,
+  clipboard: <><rect x="6" y="4" width="12" height="17" rx="2" /><path d="M9 4h6v3H9zM9 12l2 2 4-4" /></>,
+  sliders: <path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6" />,
   alert: <><path d="M12 4l9 16H3z" /><path d="M12 10v4M12 17v.5" /></>,
 };
 export default function Icon({ name, size = 22 }: { name: keyof typeof P; size?: number }) {
