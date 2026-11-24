@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { Ctx } from "./Chats";
 
-type Party = { id: string; kind: string; name: string; phone: string | null; note: string | null; source: string; active: boolean };
+type Party = { id: string; kind: string; name: string; phone: string | null; niu: string | null; note: string | null; source: string; active: boolean };
 type Product = { id: string; name: string; unit: string; price_fcfa: number | null; source: string; active: boolean };
 type View = "customer" | "supplier" | "product";
 const n0 = (v: number) => Math.round(v).toLocaleString("fr-FR");
@@ -18,7 +18,7 @@ export default function Catalogue({ ctx }: { ctx: Ctx }) {
 
   const load = useCallback(async () => {
     const [{ data: ps }, { data: pr }, { data: me }] = await Promise.all([
-      supabase.from("party").select("id,kind,name,phone,note,source,active").eq("business_id", ctx.business_id).order("name"),
+      supabase.from("party").select("id,kind,name,phone,niu,note,source,active").eq("business_id", ctx.business_id).order("name"),
       supabase.from("product").select("id,name,unit,price_fcfa,source,active").eq("business_id", ctx.business_id).order("name"),
       supabase.from("member").select("id").eq("business_id", ctx.business_id).eq("person_id", ctx.person_id).limit(1),
     ]);
@@ -42,6 +42,10 @@ export default function Catalogue({ ctx }: { ctx: Ctx }) {
     setF({ name: "", phone: "", note: "", unit: "", price: "" }); setAdding(false); load();
   }
   async function archive(table: "party" | "product", id: string, active: boolean) { await supabase.rpc("set_catalogue_active", { p_table: table, p_id: id, p_active: active }); load(); }
+  async function niu(p: Party) {
+    const v = window.prompt(`NIU (numéro d'identifiant unique) de « ${p.name} »`, p.niu ?? ""); if (v === null) return;
+    await supabase.rpc("set_party_niu", { p_id: p.id, p_niu: v }); load();
+  }
   async function price(p: Product) {
     const v = window.prompt(`Nouveau prix de « ${p.name} » (FCFA par ${p.unit})`, p.price_fcfa?.toString() ?? ""); if (v === null) return;
     const n = Number(v.replace(/\s/g, "")); if (!Number.isFinite(n) || n < 0) return;
@@ -85,8 +89,8 @@ export default function Catalogue({ ctx }: { ctx: Ctx }) {
             </div>)
           : (rows as Party[]).map((p, i) => <div key={p.id} style={{ padding: "10px 0", borderTop: i ? "1px solid var(--line)" : undefined, opacity: p.active ? 1 : 0.5 }}>
               <b>{p.name}</b>{!p.active && <span className="muted"> · archivé</span>}
-              <div className="muted" style={{ fontSize: 12 }}>{[p.phone, p.note, p.source === "backfill" ? "repris des rapports approuvés" : null].filter(Boolean).join(" · ") || "—"}</div>
-              {can && <div style={{ marginTop: 6 }}><button style={{ minHeight: 34, fontSize: 13 }} onClick={() => archive("party", p.id, !p.active)}>{p.active ? "Archiver" : "Rétablir"}</button></div>}
+              <div className="muted" style={{ fontSize: 12 }}>{[p.phone, p.niu ? "NIU " + p.niu : null, p.note, p.source === "backfill" ? "repris des rapports approuvés" : null].filter(Boolean).join(" · ") || "—"}</div>
+              {can && <div style={{ display: "flex", gap: 8, marginTop: 6 }}>{p.kind === "customer" && <button style={{ minHeight: 34, fontSize: 13 }} onClick={() => niu(p)}>NIU</button>}<button style={{ minHeight: 34, fontSize: 13 }} onClick={() => archive("party", p.id, !p.active)}>{p.active ? "Archiver" : "Rétablir"}</button></div>}
             </div>)}
       </div>
     </div>
