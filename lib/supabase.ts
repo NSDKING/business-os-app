@@ -15,5 +15,5 @@ export type Message = {
 };
 export type Draft = {
   id: string; business_id: string; record_type_id: string; fields: Record<string, unknown>;
-  status: string; confidence: number | null; created_at: string; questions: string[];
+  status: string; confidence: number | null; created_at: string; questions: string[]; edited_at?: string | null;
 };

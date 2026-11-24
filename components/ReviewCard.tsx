@@ -100,6 +100,11 @@ export default function ReviewCard({ d, title, source, evidence, photo, onDone, 
     else if ("amount_fcfa" in f && data) setPaid(String(data)); // a payment: offer to link it to an order
     else onDone();
   }
+  async function saveEdit() {
+    setBusy(true); setErr("");
+    const { error } = await supabase.rpc("edit_draft", { p_draft: d.id, p_fields: f });
+    setBusy(false); if (error) setErr("Impossible d'enregistrer la correction."); else { setEditing(false); onDone(); }
+  }
   async function reject() {
     setBusy(true); setErr("");
     const { error } = await supabase.rpc("reject_draft", { p_draft: d.id });
@@ -134,6 +139,7 @@ export default function ReviewCard({ d, title, source, evidence, photo, onDone, 
         </div>))}
 
       {bad.size > 0 && <div className="quote">Les cases en orange ne tombent pas juste : <b>début + production − sorties = fin (livre)</b> et <b>écart = fin (réel) − fin (livre)</b>. {editing ? "Corrigez-les." : "Touchez Modifier pour corriger."}</div>}
+      {d.edited_at && <div className="muted" style={{ marginTop: 6 }}>Corrigé avant approbation le {new Date(d.edited_at).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}</div>}
       {d.questions.length > 0 && <div className="quote">À vérifier : {d.questions.join(" · ")}</div>}
 
       <div className="muted" style={{ marginTop: 10 }}>Message d'origine</div>
@@ -143,6 +149,10 @@ export default function ReviewCard({ d, title, source, evidence, photo, onDone, 
       {err && <p style={{ color: "var(--error)" }}>{err}</p>}
 
       {!canApprove && <div className="quote">Vous ne pouvez pas approuver ce type de rapport.{approvers.length > 0 && <> Peuvent l'approuver : <b>{approvers.join(", ")}</b>.</>}</div>}
+      {!canApprove && (editing
+        ? <div className="row"><button className="primary" disabled={busy || !changed} onClick={saveEdit}>Enregistrer ma correction</button><button disabled={busy} onClick={() => { setF(structuredClone(d.fields)); setEditing(false); }}>Annuler</button></div>
+        : <p><button disabled={busy} onClick={() => setEditing(true)}>Corriger mon rapport</button></p>)}
+      {canApprove && editing && changed && <p><button disabled={busy} onClick={saveEdit}>Enregistrer sans approuver</button></p>}
       {canApprove && <p><button className="primary big" disabled={busy} onClick={approve}>{editing && changed ? "Approuver avec mes corrections" : "Approuver le rapport"}</button></p>}
       {canApprove && <div className="row">
         {editing
