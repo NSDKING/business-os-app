@@ -9,6 +9,7 @@ import Notifications from "@/components/Notifications";
 import Business from "@/components/Business";
 import Catalogue from "@/components/Catalogue";
 import AddSheet from "@/components/AddSheet";
+import Discussions from "@/components/Discussions";
 import Invoices from "@/components/Invoices";
 import Chats from "@/components/Chats";
 import Avatar from "@/components/Avatar";
@@ -86,14 +87,15 @@ export default function Home() {
 }
 
 function BusinessArea({ ctx }: { ctx: Ctx }) {
-  const [v, setV] = useState<"figures" | "directory" | "invoices">("figures");
+  const [v, setV] = useState<"figures" | "directory" | "invoices" | "chats">("figures");
   return (<>
     <div style={{ display: "flex", gap: 6, padding: "8px 12px 0" }}>
       <button className={v === "figures" ? "primary" : ""} style={{ flex: 1, minHeight: 38 }} onClick={() => setV("figures")}>Chiffres</button>
       <button className={v === "directory" ? "primary" : ""} style={{ flex: 1, minHeight: 38 }} onClick={() => setV("directory")}>Répertoire</button>
       <button className={v === "invoices" ? "primary" : ""} style={{ flex: 1, minHeight: 38 }} onClick={() => setV("invoices")}>Factures</button>
+      <button className={v === "chats" ? "primary" : ""} style={{ flex: 1, minHeight: 38 }} onClick={() => setV("chats")}>Clients IA</button>
     </div>
-    {v === "figures" ? <Business ctx={ctx} /> : v === "directory" ? <Catalogue ctx={ctx} /> : <Invoices ctx={ctx} />}
+    {v === "figures" ? <Business ctx={ctx} /> : v === "directory" ? <Catalogue ctx={ctx} /> : v === "invoices" ? <Invoices ctx={ctx} /> : <Discussions ctx={ctx} />}
   </>);
 }
 
