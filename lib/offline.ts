@@ -9,7 +9,7 @@ const READ_RPC = new Set(["stock_levels", "money_summary", "customer_balances", 
 const NEVER_QUEUE_RPC = new Set(["enter_demo", "create_business", "request_private_access", "customer_thread", "customer_message", "save_push_subscription", "remove_push_subscription"]);
 
 export type Action = { id: string; at: string; name: string; method: string; url: string; headers: [string, string][]; body: string | null };
-export type Conflict = { id: string; at: string; name: string; reason: string };
+export type Conflict = { id: string; at: string; name: string; reason: string; method?: string; url?: string; headers?: [string, string][]; body?: string | null };
 
 let getToken: () => Promise<string | null> = async () => null;
 export const setTokenGetter = (f: () => Promise<string | null>) => { getToken = f; };
@@ -19,6 +19,22 @@ const save = (k: string, v: unknown) => { try { localStorage.setItem(k, JSON.str
 export const readActions = () => load<Action>(ACTIONS);
 export const readConflicts = () => load<Conflict>(CONFLICTS);
 export const clearConflicts = () => save(CONFLICTS, []);
+export const dropConflict = (id: string) => { save(CONFLICTS, readConflicts().filter((c) => c.id !== id)); notify(); };
+// Redo a refused action against the situation as it is now. The server decides again; if it refuses, the reason is updated.
+export async function redoConflict(id: string): Promise<string | null> {
+  const c = readConflicts().find((x) => x.id === id);
+  if (!c || !c.url || !c.method) return "Action introuvable.";
+  const token = await getToken(); if (!token) return "Connectez-vous d'abord.";
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return "Pas de réseau.";
+  let res: Response;
+  try { res = await fetch(c.url, { method: c.method, headers: [...(c.headers ?? []), ["Authorization", `Bearer ${token}`]], body: c.body ?? null }); }
+  catch { return "Pas de réseau."; }
+  if (res.ok) { dropConflict(id); return null; }
+  let reason = ""; try { reason = (await res.json()).message ?? ""; } catch {}
+  reason = reason || `erreur ${res.status}`;
+  save(CONFLICTS, readConflicts().map((x) => x.id === id ? { ...x, reason } : x)); notify();
+  return reason;
+}
 const notify = () => { try { window.dispatchEvent(new Event("bos-offline-change")); } catch {} };
 
 const rpcName = (url: string) => /\/rest\/v1\/rpc\/([a-z_0-9]+)/.exec(url)?.[1] ?? "";
@@ -72,7 +88,7 @@ export async function flushActions(): Promise<void> {
       save(ACTIONS, readActions().filter((x) => x.id !== a.id));
       if (!res.ok) {
         let reason = ""; try { reason = (await res.json()).message ?? ""; } catch {}
-        save(CONFLICTS, [...readConflicts(), { id: a.id, at: a.at, name: a.name, reason: reason || `erreur ${res.status}` }]);
+        save(CONFLICTS, [...readConflicts(), { id: a.id, at: a.at, name: a.name, reason: reason || `erreur ${res.status}`, method: a.method, url: a.url, headers: a.headers, body: a.body }]);
       }
       notify();
     }

@@ -2,7 +2,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase, type Channel, type Draft, type Message } from "@/lib/supabase";
 import { enqueue, flushQueue, readQueue } from "@/lib/queue";
-import { flushActions, readActions, readConflicts, clearConflicts, wipeLocalCopy, type Conflict } from "@/lib/offline";
+import { flushActions, readActions, readConflicts, wipeLocalCopy, type Conflict } from "@/lib/offline";
+import ConflictDrafts from "@/components/ConflictDrafts";
 import ReviewCard from "@/components/ReviewCard";
 import Approvers from "@/components/Approvers";
 import Compliance from "@/components/Compliance";
@@ -92,8 +93,8 @@ export default function Home() {
       {online && pendingN > 0 && <div className="offline">Envoi en cours… ({pendingN} en attente)</div>}
       {conflicts.length > 0 && <div className="card" style={{ margin: "8px 12px", borderLeft: "4px solid var(--pending)" }}>
         <b>Une action faite hors ligne n'a pas pu être appliquée</b>
-        {conflicts.map((c) => <div key={c.id} className="muted" style={{ fontSize: 13 }}>{c.name} · {new Date(c.at).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })} : {c.reason}. Quelqu'un l'a peut-être déjà fait ; vérifiez la situation actuelle puis recommencez si besoin.</div>)}
-        <button style={{ minHeight: 36, marginTop: 6 }} onClick={() => { clearConflicts(); setConflicts([]); }}>Compris</button></div>}
+        {conflicts.map((c) => <div key={c.id} className="muted" style={{ fontSize: 13 }}>{c.name} · {new Date(c.at).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })} : {c.reason}. </div>)}
+        <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>Détails et choix (refaire ou abandonner) dans l'onglet Drafts.</div></div>}
       {tab === "messages" && <MessagesArea ctx={ctx} online={online} isAdmin={isAdmin} onQueue={() => setPendingN(readQueue().length)} onFull={setFull} full={full} gear={gear} />}
       {tab === "drafts" && <Reports ctx={ctx} />}
       {tab === "documents" && <Invoices ctx={ctx} />}
@@ -183,6 +184,7 @@ function Reports({ ctx }: { ctx: Ctx }) {
   return (<div className="body">
     <button className="primary big" onClick={() => setAdding(true)}>+ Ajouter une information</button>
     {adding && <AddSheet ctx={ctx} onClose={() => setAdding(false)} onDone={load} />}
+    <ConflictDrafts />
     {loaded && drafts.length === 0 && <div className="card"><span className="pill ok">Tout est à jour</span><p className="muted">Aucun rapport à approuver.</p></div>}
     {drafts.map((d) => <ReviewCard key={d.id} d={d} canApprove={rights.all || rights.types.has(d.record_type_id)} approvers={[...new Set([...rights.everyone, ...(rights.byType.get(d.record_type_id) ?? [])])]} title={d.rt ?? "Rapport"} source={d.src ?? ""} evidence={d.ev ?? ""} photo={d.photo} onDone={load} />)}
   </div>);
