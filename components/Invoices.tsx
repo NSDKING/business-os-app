@@ -14,14 +14,15 @@ const day = (iso: string) => new Date(iso).toLocaleDateString("fr-FR", { day: "2
 const BILLABLE: Record<string, string> = { chicken_order: "Vente de poulets", loading_order: "Chargement d'œufs", ad_contract: "Contrat publicitaire" };
 const STATUS: Record<string, string> = { draft: "Brouillon", issued: "Émise", void: "Annulée" };
 
-export default function Invoices({ ctx }: { ctx: Ctx }) {
+export default function Invoices({ ctx, openId }: { ctx: Ctx; openId?: string }) {
   const [inSales, setInSales] = useState<Set<string>>(new Set()); const [invs, setInvs] = useState<Inv[]>([]); const [cands, setCands] = useState<Cand[]>([]);
   const [tax, setTax] = useState({ on: false, rate: "19.25", niu: "" }); const [admin, setAdmin] = useState(false); const [saved, setSaved] = useState(""); const [logo, setLogo] = useState<string | null>(null);
   const [custs, setCusts] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => { supabase.from("party").select("id,name").eq("business_id", ctx.business_id).eq("kind", "customer").eq("active", true).order("name").then(({ data }) => setCusts(data ?? [])); }, [ctx.business_id]);
   const [paid, setPaid] = useState<Record<string, number>>({});
-  const [can, setCan] = useState(false); const [err, setErr] = useState(""); const [busy, setBusy] = useState(""); const [open, setOpen] = useState("");
+  const [can, setCan] = useState(false); const [err, setErr] = useState(""); const [busy, setBusy] = useState(""); const [open, setOpen] = useState(openId ?? "");
 
+  useEffect(() => { if (openId && invs.length) document.getElementById("inv-" + openId)?.scrollIntoView({ block: "center" }); }, [openId, invs.length]);
   const load = useCallback(async () => {
     const since = new Date(Date.now() - 60 * 86400000).toISOString();
     const [{ data: iv }, { data: rts }, { data: rs }, { data: me }] = await Promise.all([
@@ -114,7 +115,7 @@ export default function Invoices({ ctx }: { ctx: Ctx }) {
         <button disabled={busy === c.id} style={{ minHeight: 36 }} onClick={() => createAndDownload(c.id)}>Créer la facture</button></div>)}
     </div>}
     {invs.length === 0 && <div className="card"><p className="muted">Aucune facture pour l'instant.{can ? " Créez-en une depuis « À facturer »." : ""}</p></div>}
-    {invs.map((i) => <div key={i.id} className="card" style={{ opacity: i.status === "void" ? 0.55 : 1 }}>
+    {invs.map((i) => <div key={i.id} id={"inv-" + i.id} className="card" style={{ opacity: i.status === "void" ? 0.55 : 1 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }} onClick={() => setOpen(open === i.id ? "" : i.id)}>
         <span><b>{i.number ?? "Brouillon"}</b><div className="muted" style={{ fontSize: 12 }}>{i.customer} · {day(i.issued_at ?? i.created_at)}</div></span>
         <span style={{ textAlign: "right" }}><b>{n0(i.ttc_fcfa ?? i.total_fcfa)} FCFA</b>{(() => { const due = i.ttc_fcfa ?? i.total_fcfa; const got = paid[i.id] ?? 0;

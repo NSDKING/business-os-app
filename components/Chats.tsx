@@ -42,8 +42,8 @@ function preview(i: Item) {
   return i.kind === "group" && i.last_sender ? <>{i.last_sender.split(" ")[0]} : {body}</> : <>{body}</>;
 }
 
-export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
-  ctx: Ctx; online: boolean; isAdmin: boolean; onQueue: () => void; onFull: (full: boolean) => void;
+export default function Chats({ ctx, online, isAdmin, onQueue, onFull, jump }: {
+  ctx: Ctx; online: boolean; isAdmin: boolean; onQueue: () => void; onFull: (full: boolean) => void; jump?: { channel: string; message: string };
 }) {
   const [screen, setScreen] = useState<Screen>({ s: "list" });
   const [items, setItems] = useState<Item[]>([]);
@@ -85,22 +85,25 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
     if (c && items.some((i) => i.channel_id === c)) { history.replaceState(null, "", "/"); go({ s: "convo", id: c, focus: u.get("m") || undefined }); }
   }, [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const [wide, setWide] = useState(false);
+  useEffect(() => { const m = window.matchMedia("(min-width: 900px)"); const f = () => setWide(m.matches); f(); m.addEventListener("change", f); return () => m.removeEventListener("change", f); }, []);
+  useEffect(() => { if (wide) onFull(false); }, [wide]); // eslint-disable-line react-hooks/exhaustive-deps
   const go = (s: Screen) => {
-    setScreen(s); onFull(s.s !== "list"); if (s.s === "list") loadList();
+    setScreen(s); onFull(s.s !== "list" && !window.matchMedia("(min-width: 900px)").matches); if (s.s === "list") loadList();
     if (s.s === "convo") setItems((it) => it.map((i) => (i.channel_id === s.id ? { ...i, unread: 0 } : i)));
   };
+  useEffect(() => { if (jump && loaded) go({ s: "convo", id: jump.channel, focus: jump.message }); }, [jump, loaded]); // eslint-disable-line react-hooks/exhaustive-deps
   const cur = screen.s === "convo" || screen.s === "info" ? items.find((i) => i.channel_id === screen.id) : undefined;
 
   if (screen.s === "new") return <NewChat ctx={ctx} isAdmin={isAdmin} people={people} members={members}
     onBack={() => go({ s: "list" })} onOpen={(id) => { loadList(); go({ s: "convo", id }); }} />;
-  if ((screen.s === "convo" || screen.s === "info") && cur) {
-    return screen.s === "info"
+  const detail = (screen.s === "convo" || screen.s === "info") && cur ? (screen.s === "info"
       ? <GroupInfo item={cur} people={people} onBack={() => go({ s: "convo", id: cur.channel_id })} onRenamed={loadList} />
-      : <Convo ctx={ctx} item={cur} people={people} online={online} onQueue={onQueue} onRead={loadList} members={members} isAdmin={isAdmin} chats={items} focus={screen.s === "convo" ? screen.focus : undefined}
-          onBack={() => go({ s: "list" })} onInfo={() => cur.kind === "group" && go({ s: "info", id: cur.channel_id })} />;
-  }
+      : <Convo key={cur.channel_id + (screen.focus ?? "")} ctx={ctx} item={cur} people={people} online={online} onQueue={onQueue} onRead={loadList} members={members} isAdmin={isAdmin} chats={items} focus={screen.focus}
+          onBack={() => go({ s: "list" })} onInfo={() => cur.kind === "group" && go({ s: "info", id: cur.channel_id })} />) : null;
+  if (detail && !wide) return detail;
 
-  return (<>
+  const listView = (<>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 16px 4px" }}>
       <span style={{ fontSize: 34, fontWeight: 700, letterSpacing: -0.5 }}>Messages</span>
       <button onClick={() => go({ s: "new" })} aria-label="Nouvelle discussion" style={{ border: 0, background: "none", minWidth: 44, color: "var(--text)", display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name="edit" size={27} /></button></div>
@@ -176,6 +179,12 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull }: {
       })()}
     </div>
   </>);
+  if (!wide) return listView;
+  // Computer: list in the middle, open conversation on the right (P-033).
+  return (<div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+    <div style={{ width: 380, flex: "none", display: "flex", flexDirection: "column", minHeight: 0, borderRight: "1px solid var(--line)" }}>{listView}</div>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>{detail ?? <div className="body muted" style={{ display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17 }}>Choisissez une discussion à gauche.</div>}</div>
+  </div>);
 }
 
 function MediaView({ m }: { m: Message }) {

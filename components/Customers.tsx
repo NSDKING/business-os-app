@@ -27,11 +27,11 @@ const plusDays = (n: number) => { const d = new Date(); d.setDate(d.getDate() + 
 const waNumber = (ph: string | null) => { const d = (ph ?? "").replace(/\D/g, ""); if (!d) return ""; return d.length === 9 ? "237" + d : d.replace(/^00/, ""); };
 const big: React.CSSProperties = { minHeight: 52, fontSize: 17, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, flex: 1 };
 
-export default function Customers({ ctx }: { ctx: Ctx }) {
+export default function Customers({ ctx, openId }: { ctx: Ctx; openId?: string }) {
   const can = useCanMaintain(ctx);
   const [list, setList] = useState<Party[] | null>(null); const [unpaid, setUnpaid] = useState<Unpaid[]>([]); const [due, setDue] = useState<Due[]>([]);
   const [filter, setFilter] = useState<"customers" | "prospects" | "lost">("customers"); const [q, setQ] = useState("");
-  const [open, setOpen] = useState<string | null>(null); const [adding, setAdding] = useState(false);
+  const [open, setOpen] = useState<string | null>(openId ?? null); const [adding, setAdding] = useState(false);
   const [nw, setNw] = useState({ name: "", phone: "", stage: "customer" }); const [msg, setMsg] = useState("");
 
   const load = useCallback(async () => {

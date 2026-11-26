@@ -5,6 +5,7 @@ import { enqueue, flushQueue, readQueue } from "@/lib/queue";
 import { flushActions, readActions, readConflicts, wipeLocalCopy, type Conflict } from "@/lib/offline";
 import ConflictDrafts from "@/components/ConflictDrafts";
 import WorkerHome from "@/components/WorkerHome";
+import GlobalSearch, { type Jump } from "@/components/GlobalSearch";
 import ReviewCard from "@/components/ReviewCard";
 import Approvers from "@/components/Approvers";
 import Compliance from "@/components/Compliance";
@@ -43,6 +44,7 @@ export default function Home() {
   const [pendingN, setPendingN] = useState(0); const [conflicts, setConflicts] = useState<Conflict[]>([]);
   const [full, setFull] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [searching, setSearching] = useState(false); const [jump, setJump] = useState<Jump | null>(null); const [jumpN, setJumpN] = useState(0);
   const [worker, setWorker] = useState<boolean | null>(null); const [home, setHome] = useState(true);
 
   useEffect(() => {
@@ -104,7 +106,10 @@ export default function Home() {
     </div></div>);
   }
   const hideBar = tab === "messages" && full;
-  const gear = <button className="iconbtn" aria-label="Réglages" onClick={() => setTab("settings")}><Icon name="sliders" size={22} /></button>;
+  const gear = <><button aria-label="Rechercher" onClick={() => setSearching(true)} style={{ border: 0, background: "none", minWidth: 44, minHeight: 44, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text)" }}><Icon name="search" size={24} /></button>
+    <button className="iconbtn" aria-label="Réglages" onClick={() => setTab("settings")}><Icon name="sliders" size={22} /></button></>;
+  const doJump = (j: Jump) => { setSearching(false); setJump(j); setJumpN((n) => n + 1); setFull(false);
+    setTab(j.to === "invoice" ? "documents" : j.to === "message" ? "messages" : "business"); };
   return (
     <div className="shell">
       <div className="main">
@@ -115,35 +120,37 @@ export default function Home() {
         <b>Une action faite hors ligne n'a pas pu être appliquée</b>
         {conflicts.map((c) => <div key={c.id} className="muted" style={{ fontSize: 13 }}>{c.name} · {new Date(c.at).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })} : {c.reason}. </div>)}
         <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>Détails et choix (refaire ou abandonner) dans l'onglet À vérifier.</div></div>}
-      {tab === "messages" && <MessagesArea ctx={ctx} online={online} isAdmin={isAdmin} onQueue={() => setPendingN(readQueue().length)} onFull={setFull} full={full} gear={gear} />}
+      {tab === "messages" && <MessagesArea ctx={ctx} online={online} isAdmin={isAdmin} onQueue={() => setPendingN(readQueue().length)} onFull={setFull} full={full} gear={gear} jump={jump?.to === "message" ? jump : undefined} />}
       {tab === "drafts" && <Reports ctx={ctx} />}
-      {tab === "documents" && <Invoices ctx={ctx} />}
-      {tab === "business" && <BusinessArea ctx={ctx} />}
+      {tab === "documents" && <Invoices key={"i" + jumpN} ctx={ctx} openId={jump?.to === "invoice" ? jump.id : undefined} />}
+      {tab === "business" && <BusinessArea key={"b" + jumpN} ctx={ctx} jump={jump} />}
+      {searching && <GlobalSearch businessId={ctx.business_id} onClose={() => setSearching(false)} onJump={doJump} />}
       {tab === "insights" && <Business ctx={ctx} />}
       {tab === "settings" && <Settings ctx={ctx} />}
       </div>
       <div className={"tabs" + (hideBar ? " narrow-hide" : "")}>
         <div className="brand">{ctx.business}</div>
         {TABS.map(({ t, label, icon }) => (
-          <button key={t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}><Icon name={icon} size={22} />{label}</button>))}
+          <button key={t} className={tab === t ? "on" : ""} onClick={() => { setTab(t); setJump(null); }}><Icon name={icon} size={22} />{label}</button>))}
         <div className="grow" />
+        <button className="deskonly" onClick={() => setSearching(true)}><Icon name="search" size={22} />Rechercher</button>
         <button className={tab === "settings" ? "on" : ""} onClick={() => setTab("settings")}><Icon name="sliders" size={22} />Réglages</button>
       </div>
     </div>
   );
 }
 
-function BusinessArea({ ctx }: { ctx: Ctx }) {
-  const [v, setV] = useState<"customers" | "directory" | "sales" | "stock" | "purchases" | "money" | "staff">("customers");
+function BusinessArea({ ctx, jump }: { ctx: Ctx; jump?: Jump | null }) {
+  const [v, setV] = useState<"customers" | "directory" | "sales" | "stock" | "purchases" | "money" | "staff">(jump?.to === "order" ? "sales" : jump?.to === "supplier" ? "directory" : "customers");
   return (<>
     <div style={{ display: "flex", gap: 6, padding: "8px 12px 0", overflowX: "auto" }}>
       {([["customers", "Clients"], ["directory", "Fournisseurs et produits"], ["sales", "Ventes"], ["stock", "Stock"], ["purchases", "Achats"], ["money", "Argent"], ["staff", "Personnel"]] as const).map(([k, t]) => <button key={k} className={v === k ? "primary" : ""} style={{ flex: "1 0 auto", minHeight: 38, padding: "0 12px" }} onClick={() => setV(k)}>{t}</button>)}
     </div>
-    {v === "customers" ? <Customers ctx={ctx} /> : v === "directory" ? <Catalogue ctx={ctx} /> : v === "sales" ? <Sales ctx={ctx} /> : v === "stock" ? <Stock ctx={ctx} /> : v === "purchases" ? <Purchases ctx={ctx} /> : v === "money" ? <Money ctx={ctx} /> : <Staff ctx={ctx} />}
+    {v === "customers" ? <Customers ctx={ctx} openId={jump?.to === "customer" ? jump.id : undefined} /> : v === "directory" ? <Catalogue ctx={ctx} /> : v === "sales" ? <Sales ctx={ctx} openId={jump?.to === "order" ? jump.id : undefined} /> : v === "stock" ? <Stock ctx={ctx} /> : v === "purchases" ? <Purchases ctx={ctx} /> : v === "money" ? <Money ctx={ctx} /> : <Staff ctx={ctx} />}
   </>);
 }
 
-function MessagesArea({ ctx, online, isAdmin, onQueue, onFull, full, gear }: { ctx: Ctx; online: boolean; isAdmin: boolean; onQueue: () => void; onFull: (v: boolean) => void; full: boolean; gear: React.ReactNode }) {
+function MessagesArea({ ctx, online, isAdmin, onQueue, onFull, full, gear, jump }: { ctx: Ctx; online: boolean; isAdmin: boolean; onQueue: () => void; onFull: (v: boolean) => void; full: boolean; gear: React.ReactNode; jump?: { channel: string; message: string } }) {
   const [v, setV] = useState<"team" | "customers">("team");
   return (<>
     {!full && <div style={{ display: "flex", gap: 6, padding: "8px 12px 0", alignItems: "center" }}>
@@ -151,7 +158,7 @@ function MessagesArea({ ctx, online, isAdmin, onQueue, onFull, full, gear }: { c
       <button className={v === "customers" ? "primary" : ""} style={{ flex: 1, minHeight: 38 }} onClick={() => setV("customers")}>Clients</button>
       {gear}
     </div>}
-    {v === "team" || full ? <Chats ctx={ctx} online={online} isAdmin={isAdmin} onQueue={onQueue} onFull={onFull} /> : <Discussions ctx={ctx} />}
+    {v === "team" || full ? <Chats ctx={ctx} online={online} isAdmin={isAdmin} onQueue={onQueue} onFull={onFull} jump={jump} /> : <Discussions ctx={ctx} />}
   </>);
 }
 

@@ -19,7 +19,7 @@ const n0 = (v: number) => Math.round(v).toLocaleString("fr-FR");
 const day = (iso: string) => new Date(iso).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
 const sel: React.CSSProperties = { width: "100%", minHeight: 46, borderRadius: 10, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--text)", padding: "0 10px" };
 
-export default function Sales({ ctx }: { ctx: Ctx }) {
+export default function Sales({ ctx, openId }: { ctx: Ctx; openId?: string }) {
   const can = useCanMaintain(ctx);
   const [orders, setOrders] = useState<SO[]>([]); const [prods, setProds] = useState<Prod[]>([]); const [custs, setCusts] = useState<Party[]>([]);
   const [items, setItems] = useState<Level[]>([]); const [bals, setBals] = useState<Bal[]>([]); const [imps, setImps] = useState<Imp[]>([]);
@@ -54,6 +54,7 @@ export default function Sales({ ctx }: { ctx: Ctx }) {
     }
   }, [ctx.business_id]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (openId && orders.length) document.getElementById("so-" + openId)?.scrollIntoView({ block: "center" }); }, [openId, orders.length]);
 
   async function act(key: string, fn: () => PromiseLike<{ error: { message: string } | null }>, ok: string) {
     setBusy(key); setMsg("");
@@ -117,7 +118,7 @@ export default function Sales({ ctx }: { ctx: Ctx }) {
         <button className="primary" disabled={busy === "new"} onClick={createQuote}>Créer le devis</button><button onClick={() => setForm(null)}>Annuler</button></div></div>}
     {live.length === 0 && !form && <div className="card"><h3>Ventes</h3><p className="muted">Aucun devis ni commande pour l'instant.</p></div>}
     {orders.map((o) => { const rest = o.lines.map((l) => String(Math.max(0, l.qty - (l.delivered ?? 0)))); const d = dl[o.id] ?? rest; const invId = invOf[o.id]; const toBill = o.lines.map((l) => Math.max(0, Math.min(l.qty, l.delivered ?? 0) - (l.invoiced ?? 0))); const leftBill = o.lines.map((l) => Math.max(0, l.qty - (l.invoiced ?? 0))); const allBilled = leftBill.every((x) => x === 0); const b = bill[o.id]; return (
-      <div className="card" key={o.id} style={o.status === "cancelled" ? { opacity: 0.6 } : undefined}>
+      <div className="card" key={o.id} id={"so-" + o.id} style={{ ...(o.status === "cancelled" ? { opacity: 0.6 } : {}), ...(o.id === openId ? { outline: "3px solid var(--primary)" } : {}) }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><b>{o.order_number ?? o.quote_number} · {o.customer}</b><span className="muted">{STATUS[o.status]}</span></div>
         {o.lines.map((l, i) => <div key={i} className="muted" style={{ fontSize: 13 }}>{l.label} : {n0(l.qty)}{l.delivered ? ` · livré ${n0(l.delivered)}` : ""}{l.invoiced ? ` · facturé ${n0(l.invoiced)}` : ""} × {n0(l.unit_price)}</div>)}
         <div style={{ marginTop: 4 }}><b>{n0(o.total_fcfa)} FCFA</b> <span className="muted">· {day(o.created_at)}{o.status === "quote" && o.valid_until ? ` · valable jusqu'au ${day(o.valid_until)}` : ""}</span></div>
