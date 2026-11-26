@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { mediaUrl } from "@/lib/media";
 import { supabase, type Draft } from "@/lib/supabase";
 import PaymentLink from "./PaymentLink";
+import CustomerPick, { CUSTOMER_KEYS, loadCustomers, knows } from "./CustomerPick";
 
 type Row = Record<string, unknown>;
 type Fields = Record<string, unknown>;
@@ -92,12 +93,22 @@ export default function ReviewCard({ d, title, source, evidence, photo, onDone, 
       return { ...x, [key]: rows };
     });
   }
+  const [ask, setAsk] = useState<{ key: string; name: string } | null>(null);
   async function approve() {
+    // A customer name the list does not know: ask before approving (P-031).
+    for (const k of CUSTOMER_KEYS) {
+      const v = typeof f[k] === "string" ? (f[k] as string).trim() : "";
+      if (v && !knows(await loadCustomers(d.business_id), v)) return setAsk({ key: k, name: v });
+    }
+    return send(f);
+  }
+  async function send(ff: Fields) {
+    const ch = JSON.stringify(ff) !== JSON.stringify(d.fields);
     setBusy(true); setErr("");
-    const { data, error } = await supabase.rpc("approve_draft", { p_draft: d.id, p_fields: changed ? f : null });
+    const { data, error } = await supabase.rpc("approve_draft", { p_draft: d.id, p_fields: ch ? ff : null });
     setBusy(false);
-    if (error) setErr("Impossible d'approuver (droits ?).");
-    else if ("amount_fcfa" in f && data) setPaid(String(data)); // a payment: offer to link it to an order
+    if (error) setErr(/^Déjà/.test(error.message) ? error.message : "Impossible d'approuver (droits ?).");
+    else if ("amount_fcfa" in ff && data) setPaid(String(data)); // a payment: offer to link it to an order
     else onDone();
   }
   async function saveEdit() {
@@ -153,7 +164,8 @@ export default function ReviewCard({ d, title, source, evidence, photo, onDone, 
         ? <div className="row"><button className="primary" disabled={busy || !changed} onClick={saveEdit}>Enregistrer ma correction</button><button disabled={busy} onClick={() => { setF(structuredClone(d.fields)); setEditing(false); }}>Annuler</button></div>
         : <p><button disabled={busy} onClick={() => setEditing(true)}>Corriger mon rapport</button></p>)}
       {canApprove && editing && changed && <p><button disabled={busy} onClick={saveEdit}>Enregistrer sans approuver</button></p>}
-      {canApprove && <p><button className="primary big" disabled={busy} onClick={approve}>{editing && changed ? "Approuver avec mes corrections" : "Approuver le rapport"}</button></p>}
+      {ask && <CustomerPick business={d.business_id} name={ask.name} onCancel={() => setAsk(null)} onPick={(nm) => { const ff = { ...f, [ask.key]: nm }; setF(ff); setAsk(null); send(ff); }} />}
+      {canApprove && !ask && <p><button className="primary big" disabled={busy} onClick={approve}>{editing && changed ? "Approuver avec mes corrections" : "Approuver le rapport"}</button></p>}
       {canApprove && <div className="row">
         {editing
           ? <button disabled={busy} onClick={() => { setF(structuredClone(d.fields)); setEditing(false); }}>Annuler</button>
