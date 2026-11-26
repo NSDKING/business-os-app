@@ -5,7 +5,7 @@
 //   it goes to a list of conflicts that the person is told about.
 // - Not queued: sign-in, the AI functions, file uploads, demo/business creation, and chat messages (they have their own queue).
 const ACTIONS = "bos.actions.v1", CONFLICTS = "bos.conflicts.v1", CACHE = "bos-read-v1";
-const READ_RPC = new Set(["stock_levels", "money_summary", "customer_balances", "inventory_summary", "message_receipts", "private_chat_messages", "private_access_history"]);
+const READ_RPC = new Set(["stock_levels", "money_summary", "customer_balances", "inventory_summary", "message_receipts", "private_chat_messages", "private_access_history", "customer_file", "unpaid_customers", "due_followups"]);
 const NEVER_QUEUE_RPC = new Set(["enter_demo", "create_business", "request_private_access", "customer_thread", "customer_message", "save_push_subscription", "remove_push_subscription"]);
 
 export type Action = { id: string; at: string; name: string; method: string; url: string; headers: [string, string][]; body: string | null };

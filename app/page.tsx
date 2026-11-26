@@ -16,6 +16,7 @@ import Purchases from "@/components/Purchases";
 import Money from "@/components/Money";
 import Sales from "@/components/Sales";
 import Staff from "@/components/Staff";
+import Customers from "@/components/Customers";
 import AddSheet from "@/components/AddSheet";
 import Discussions from "@/components/Discussions";
 import Invoices from "@/components/Invoices";
@@ -133,12 +134,12 @@ export default function Home() {
 }
 
 function BusinessArea({ ctx }: { ctx: Ctx }) {
-  const [v, setV] = useState<"directory" | "sales" | "stock" | "purchases" | "money" | "staff">("directory");
+  const [v, setV] = useState<"customers" | "directory" | "sales" | "stock" | "purchases" | "money" | "staff">("customers");
   return (<>
     <div style={{ display: "flex", gap: 6, padding: "8px 12px 0", overflowX: "auto" }}>
-      {([["directory", "Répertoire"], ["sales", "Ventes"], ["stock", "Stock"], ["purchases", "Achats"], ["money", "Argent"], ["staff", "Personnel"]] as const).map(([k, t]) => <button key={k} className={v === k ? "primary" : ""} style={{ flex: "1 0 auto", minHeight: 38, padding: "0 12px" }} onClick={() => setV(k)}>{t}</button>)}
+      {([["customers", "Clients"], ["directory", "Fournisseurs et produits"], ["sales", "Ventes"], ["stock", "Stock"], ["purchases", "Achats"], ["money", "Argent"], ["staff", "Personnel"]] as const).map(([k, t]) => <button key={k} className={v === k ? "primary" : ""} style={{ flex: "1 0 auto", minHeight: 38, padding: "0 12px" }} onClick={() => setV(k)}>{t}</button>)}
     </div>
-    {v === "directory" ? <Catalogue ctx={ctx} /> : v === "sales" ? <Sales ctx={ctx} /> : v === "stock" ? <Stock ctx={ctx} /> : v === "purchases" ? <Purchases ctx={ctx} /> : v === "money" ? <Money ctx={ctx} /> : <Staff ctx={ctx} />}
+    {v === "customers" ? <Customers ctx={ctx} /> : v === "directory" ? <Catalogue ctx={ctx} /> : v === "sales" ? <Sales ctx={ctx} /> : v === "stock" ? <Stock ctx={ctx} /> : v === "purchases" ? <Purchases ctx={ctx} /> : v === "money" ? <Money ctx={ctx} /> : <Staff ctx={ctx} />}
   </>);
 }
 
