@@ -7,7 +7,7 @@ import { invoicePdf } from "@/lib/invoicePdf";
 import { toLogo } from "@/lib/image";
 
 type Line = { label: string; qty: number; unit_price: number; total: number };
-type Inv = { id: string; number: string | null; customer: string; lines: Line[]; total_fcfa: number; vat_rate: number; vat_fcfa: number; ttc_fcfa: number | null; seller_niu: string | null; customer_niu: string | null; status: "draft" | "issued" | "void"; created_at: string; issued_at: string | null; source_record_id: string };
+type Inv = { id: string; number: string | null; customer: string; party_id?: string | null; lines: Line[]; total_fcfa: number; vat_rate: number; vat_fcfa: number; ttc_fcfa: number | null; seller_niu: string | null; customer_niu: string | null; status: "draft" | "issued" | "void"; created_at: string; issued_at: string | null; source_record_id: string };
 type Cand = { id: string; type: string; who: string; at: string };
 const n0 = (v: number) => Math.round(v).toLocaleString("fr-FR");
 const day = (iso: string) => new Date(iso).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -17,12 +17,14 @@ const STATUS: Record<string, string> = { draft: "Brouillon", issued: "Émise", v
 export default function Invoices({ ctx }: { ctx: Ctx }) {
   const [inSales, setInSales] = useState<Set<string>>(new Set()); const [invs, setInvs] = useState<Inv[]>([]); const [cands, setCands] = useState<Cand[]>([]);
   const [tax, setTax] = useState({ on: false, rate: "19.25", niu: "" }); const [admin, setAdmin] = useState(false); const [saved, setSaved] = useState(""); const [logo, setLogo] = useState<string | null>(null);
+  const [custs, setCusts] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => { supabase.from("party").select("id,name").eq("business_id", ctx.business_id).eq("kind", "customer").eq("active", true).order("name").then(({ data }) => setCusts(data ?? [])); }, [ctx.business_id]);
   const [can, setCan] = useState(false); const [err, setErr] = useState(""); const [busy, setBusy] = useState(""); const [open, setOpen] = useState("");
 
   const load = useCallback(async () => {
     const since = new Date(Date.now() - 60 * 86400000).toISOString();
     const [{ data: iv }, { data: rts }, { data: rs }, { data: me }] = await Promise.all([
-      supabase.from("invoice").select("id,number,customer,lines,total_fcfa,vat_rate,vat_fcfa,ttc_fcfa,seller_niu,customer_niu,status,created_at,issued_at,source_record_id").eq("business_id", ctx.business_id).order("created_at", { ascending: false }),
+      supabase.from("invoice").select("id,number,customer,party_id,lines,total_fcfa,vat_rate,vat_fcfa,ttc_fcfa,seller_niu,customer_niu,status,created_at,issued_at,source_record_id").eq("business_id", ctx.business_id).order("created_at", { ascending: false }),
       supabase.from("record_type").select("id,name").eq("business_id", ctx.business_id),
       supabase.from("current_record").select("id,record_type_id,fields,occurred_at").eq("business_id", ctx.business_id).gte("occurred_at", since).order("occurred_at", { ascending: false }),
       supabase.from("member").select("id").eq("business_id", ctx.business_id).eq("person_id", ctx.person_id).limit(1),
@@ -117,6 +119,9 @@ export default function Invoices({ ctx }: { ctx: Ctx }) {
       {open === i.id && <div style={{ marginTop: 8 }}>
         {i.lines.map((l, k) => <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 13 }}><span>{l.label} · {n0(l.qty)} × {n0(l.unit_price)}</span><b>{n0(l.total)}</b></div>)}
         {i.vat_rate > 0 && <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>Total HT {n0(i.total_fcfa)} · TVA {i.vat_rate} % {n0(i.vat_fcfa)} · <b>TTC {n0(i.ttc_fcfa ?? i.total_fcfa)} FCFA</b></div>}
+        {can && i.status !== "void" && custs.length > 0 && <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "6px 0" }}><span className="muted" style={{ fontSize: 14 }}>Client :</span>
+          <select value={i.party_id ?? ""} style={{ flex: 1, minHeight: 40, borderRadius: 10, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--text)" }} onChange={(e) => { const v = e.target.value; const nm = custs.find((c) => c.id === v)?.name; if (v && window.confirm(`Mettre cette facture au nom de ${nm} ?`)) run(i.id, () => supabase.rpc("set_document_customer", { p_kind: "invoice", p_id: i.id, p_party: v })); }}>
+            {!i.party_id && <option value="">{i.customer}</option>}{custs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>}
         {(i.seller_niu || i.customer_niu) && <div className="muted" style={{ fontSize: 12 }}>{i.seller_niu && `NIU vendeur ${i.seller_niu}`}{i.seller_niu && i.customer_niu && " · "}{i.customer_niu && `NIU client ${i.customer_niu}`}</div>}
         <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
           {i.status !== "void" && <button style={{ minHeight: 36 }} onClick={() => share(i)}>PDF</button>}

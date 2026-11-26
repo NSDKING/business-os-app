@@ -74,9 +74,9 @@ export default function Sales({ ctx }: { ctx: Ctx }) {
   async function createQuote() {
     if (!form) return;
     const lines = form.lines.filter((l) => l.label.trim() && num(l.qty) > 0).map((l) => ({ item_id: l.item || null, label: l.label.trim(), unit: l.unit || null, qty: num(l.qty), unit_price: num(l.price) || 0 }));
-    if (!lines.length || (!form.party && !form.name.trim())) return setMsg("Choisissez un client et ajoutez au moins une ligne.");
+    if (!lines.length || !form.party || form.party === "__new") return setMsg("Choisissez un client dans la liste et ajoutez au moins une ligne.");
     const valid = new Date(Date.now() + (num(form.days) || 30) * 864e5).toISOString().slice(0, 10);
-    await act("new", () => supabase.rpc("create_quote", { p_business: ctx.business_id, p_party: form.party || null, p_customer: form.name || "", p_lines: lines, p_valid_until: valid, p_note: form.note || null, p_id: crypto.randomUUID() }), "Devis créé.");
+    await act("new", () => supabase.rpc("create_quote", { p_business: ctx.business_id, p_party: form.party, p_customer: "", p_lines: lines, p_valid_until: valid, p_note: form.note || null, p_id: crypto.randomUUID() }), "Devis créé.");
     setForm(null);
   }
   async function pdf(o: SO) {
@@ -100,8 +100,9 @@ export default function Sales({ ctx }: { ctx: Ctx }) {
         <button style={{ minHeight: 36 }} disabled={busy === c.id} onClick={() => act(c.id, () => supabase.rpc("order_from_record", { p_record: c.id, p_id: crypto.randomUUID() }), "Commande ajoutée à Ventes.")}>Suivre</button></div>)}</div>}
     {can && !form && <button className="primary big" style={{ marginBottom: 10 }} onClick={startForm}>+ Nouveau devis</button>}
     {form && <div className="card"><h3>Nouveau devis</h3>
-      {custs.length > 0 && <p><select style={sel} value={form.party} onChange={(e) => setForm({ ...form, party: e.target.value })}><option value="">Client…</option>{custs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></p>}
-      {!form.party && <p><input placeholder="Ou nom du client" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></p>}
+      <p><select style={sel} value={form.party} onChange={(e) => setForm({ ...form, party: e.target.value, name: "" })}><option value="">Choisir le client…</option>{custs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}<option value="__new">+ Nouveau client</option></select></p>
+      {form.party === "__new" && <div style={{ display: "flex", gap: 8, marginBottom: 8 }}><input placeholder="Nom du nouveau client" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={{ flex: 1 }} />
+        <button className="primary" disabled={!form.name.trim()} onClick={async () => { const id = crypto.randomUUID(); const { error } = await supabase.rpc("add_contact", { p_business: ctx.business_id, p_name: form.name, p_phone: null, p_stage: "customer", p_note: null, p_id: id }); if (error) return setMsg("Impossible : " + error.message); setCusts((c) => [...c, { id, name: form.name.trim() }].sort((a, b) => a.name.localeCompare(b.name))); setForm({ ...form, party: id, name: "" }); }}>Ajouter</button></div>}
       {form.lines.map((l, i) => <div key={i} style={{ borderTop: "1px solid var(--line)", paddingTop: 8, marginTop: 8 }}>
         {prods.length > 0 && <p style={{ margin: "0 0 6px" }}><select style={sel} value={l.prod} onChange={(e) => pickProduct(i, e.target.value)}><option value="">Produit de la liste…</option>{prods.map((x) => <option key={x.id} value={x.id}>{x.name}{x.price_fcfa ? ` · ${n0(x.price_fcfa)}` : ""}</option>)}</select></p>}
         <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 6 }}>

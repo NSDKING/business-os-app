@@ -57,7 +57,7 @@ export default function Customers({ ctx }: { ctx: Ctx }) {
   const isP = (s: string | null) => ["prospect", "contacted", "quote_sent"].includes(s ?? "");
   const shown = list.filter((p) => filter === "prospects" ? isP(p.stage) : filter === "lost" ? p.stage === "lost" : !isP(p.stage) && p.stage !== "lost")
     .filter((p) => !q || p.name.toLowerCase().includes(q.toLowerCase()) || (p.phone ?? "").replace(/\D/g, "").includes(q.replace(/\D/g, "") || "§"));
-  const owes = new Map(unpaid.map((u) => [u.customer.trim().toLowerCase(), u.balance]));
+  const owes = new Map(unpaid.map((u) => [u.party_id ?? "", u.balance]));
 
   return (<div className="body">
     {msg && <div className="card" style={{ color: msg.startsWith("Impossible") ? "var(--error)" : undefined }}>{msg}</div>}
@@ -86,7 +86,7 @@ export default function Customers({ ctx }: { ctx: Ctx }) {
       {shown.map((p) => <div key={p.id} onClick={() => setOpen(p.id)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderTop: "1px solid var(--line)", cursor: "pointer" }}>
         <span style={{ width: 42, height: 42, borderRadius: 21, background: "var(--primary)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, flex: "none" }}>{p.name.trim()[0]?.toUpperCase()}</span>
         <div style={{ flex: 1 }}><div style={{ fontSize: 17 }}>{p.name}</div><div className="muted" style={{ fontSize: 14 }}>{filter === "prospects" ? stageLabel(p.stage) : p.phone ?? "Pas de numéro"}</div></div>
-        {owes.get(p.name.trim().toLowerCase()) ? <b style={{ color: "var(--error)", fontSize: 14 }}>doit {n0(owes.get(p.name.trim().toLowerCase())!)}</b> : null}</div>)}
+        {owes.get(p.id) ? <b style={{ color: "var(--error)", fontSize: 14 }}>doit {n0(owes.get(p.id)!)}</b> : null}</div>)}
       {can && !adding && <button className="primary big" style={{ marginTop: 10 }} onClick={() => { setAdding(true); setNw({ name: "", phone: "", stage: filter === "prospects" ? "prospect" : "customer" }); }}><Icon name="plus" size={20} /> {filter === "prospects" ? "Nouveau prospect" : "Nouveau client"}</button>}
       {adding && <div style={{ marginTop: 10 }}>
         <p><input placeholder="Nom" value={nw.name} onChange={(e) => setNw({ ...nw, name: e.target.value })} /></p>
@@ -154,6 +154,8 @@ function CustomerPage({ ctx, id, can, onBack, remind }: { ctx: Ctx; id: string; 
         <button className="primary" style={big} disabled={!note.trim()} onClick={() => run(supabase.rpc("add_party_note", { p_party: p.id, p_text: note, p_kind: "note", p_id: crypto.randomUUID() }), "Note ajoutée.").then(() => setNote(""))}><Icon name="edit" size={20} />Note</button>
         <button style={big} disabled={!note.trim()} onClick={() => run(supabase.rpc("add_party_note", { p_party: p.id, p_text: "Appel : " + note, p_kind: "call", p_id: crypto.randomUUID() }), "Appel noté.").then(() => setNote(""))}><Icon name="phone" size={20} />C&apos;était un appel</button></div></div>}
 
+    {can && <Merge ctx={ctx} party={p} onDone={onBack} />}
+
     <div className="card"><h3 style={{ marginBottom: 6 }}>Historique</h3>
       {history.length === 0 && <p className="muted">Rien encore.</p>}
       {history.map((h, i) => <div key={i} style={{ display: "flex", gap: 10, padding: "10px 0", borderTop: "1px solid var(--line)" }}>
@@ -161,4 +163,17 @@ function CustomerPage({ ctx, id, can, onBack, remind }: { ctx: Ctx; id: string; 
         <div style={{ flex: 1 }}><div>{h.t}</div><div className="muted" style={{ fontSize: 14, color: "bad" in h && h.bad ? "var(--error)" : undefined }}>{h.s}</div></div>
         <span className="muted" style={{ fontSize: 13, whiteSpace: "nowrap" }}>{day(h.at)}</span></div>)}</div>
   </div>);
+}
+
+// Same person entered twice (e.g. a misspelt name): move everything onto the right card.
+function Merge({ ctx, party, onDone }: { ctx: Ctx; party: Party; onDone: () => void }) {
+  const [others, setOthers] = useState<{ id: string; name: string }[]>([]); const [pick, setPick] = useState(""); const [open, setOpen] = useState(false); const [err, setErr] = useState("");
+  useEffect(() => { if (open) supabase.from("party").select("id,name").eq("business_id", ctx.business_id).eq("kind", "customer").eq("active", true).neq("id", party.id).order("name").then(({ data }) => setOthers(data ?? [])); }, [open, ctx.business_id, party.id]);
+  if (!open) return <button style={{ minHeight: 44, width: "100%", marginBottom: 12 }} onClick={() => setOpen(true)}>Ce client est en double ?</button>;
+  return (<div className="card"><h3 style={{ marginBottom: 4 }}>Client en double</h3>
+    <div className="muted" style={{ fontSize: 14, marginBottom: 8 }}>Choisissez la bonne fiche : tout ce qui est ici (factures, commandes, paiements, notes) y sera déplacé, et « {party.name} » sera retiré de la liste.</div>
+    <select value={pick} onChange={(e) => setPick(e.target.value)} style={{ width: "100%", minHeight: 46, borderRadius: 10, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--text)" }}><option value="">La bonne fiche est…</option>{others.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select>
+    {err && <div style={{ color: "var(--error)", marginTop: 6 }}>{err}</div>}
+    <div style={{ display: "flex", gap: 8, marginTop: 8 }}><button className="primary big" disabled={!pick} onClick={async () => { const nm = others.find((o) => o.id === pick)?.name; if (!window.confirm(`Tout mettre sur « ${nm} » ?`)) return; const { error } = await supabase.rpc("merge_customer", { p_from: party.id, p_into: pick }); if (error) setErr("Impossible : " + error.message); else onDone(); }}>Regrouper</button>
+      <button className="big" onClick={() => setOpen(false)}>Annuler</button></div></div>);
 }
