@@ -9,13 +9,14 @@ type PLine = { item_id?: string | null; label: string; qty: number; unit_price: 
 type PO = { id: string; number: string | null; supplier_name: string; lines: PLine[]; total_fcfa: number; status: string; supplier_invoice_no: string | null; supplier_invoice_fcfa: number | null; paid_at: string | null; source_record_id: string | null; created_at: string };
 type Need = { id: string; item: string; qty: number; by: string; at: string };
 type Party = { id: string; name: string };
+type Acc = { id: string; name: string };
 const STATUS: Record<string, string> = { draft: "À commander", ordered: "Commandée", partial: "Reçue en partie", received: "Reçue", cancelled: "Annulée" };
 const n0 = (v: number) => Math.round(v).toLocaleString("fr-FR");
 const day = (iso: string) => new Date(iso).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" });
 
 export default function Purchases({ ctx }: { ctx: Ctx }) {
   const can = useCanMaintain(ctx);
-  const [pos, setPos] = useState<PO[]>([]); const [needs, setNeeds] = useState<Need[]>([]); const [sups, setSups] = useState<Party[]>([]);
+  const [pos, setPos] = useState<PO[]>([]); const [needs, setNeeds] = useState<Need[]>([]); const [sups, setSups] = useState<Party[]>([]); const [accs, setAccs] = useState<Acc[]>([]); const [payAcc, setPayAcc] = useState("");
   const [form, setForm] = useState<null | { source: string | null; supplier: string; name: string; lines: { label: string; qty: string; price: string }[] }>(null);
   const [recv, setRecv] = useState<Record<string, string[]>>({}); const [inv, setInv] = useState<Record<string, { no: string; amt: string }>>({});
   const [msg, setMsg] = useState(""); const [busy, setBusy] = useState("");
@@ -26,6 +27,8 @@ export default function Purchases({ ctx }: { ctx: Ctx }) {
       supabase.from("party").select("id,name").eq("business_id", ctx.business_id).eq("kind", "supplier").eq("active", true).order("name"),
       supabase.from("record_type").select("id").eq("business_id", ctx.business_id).eq("name", "supply_request").limit(1),
     ]);
+    const { data: ac } = await supabase.from("money_account").select("id,name").eq("business_id", ctx.business_id).eq("active", true).order("name");
+    setAccs((ac as Acc[]) ?? []); setPayAcc((cur) => cur || ((ac as Acc[])?.[0]?.id ?? ""));
     const list = (p as PO[]) ?? []; setPos(list); setSups((s as Party[]) ?? []);
     if (rt?.[0]) {
       const since = new Date(Date.now() - 60 * 864e5).toISOString();
@@ -93,7 +96,8 @@ export default function Purchases({ ctx }: { ctx: Ctx }) {
               <input inputMode="numeric" placeholder="Montant FCFA" value={iv.amt} onChange={(e) => setInv({ ...inv, [p.id]: { ...iv, amt: e.target.value } })} /></div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button style={{ minHeight: 36 }} disabled={busy === p.id || !iv.amt} onClick={() => act(p.id, () => supabase.rpc("record_supplier_invoice", { p_id: p.id, p_no: iv.no, p_amount: Math.round(Number(iv.amt.replace(/\s/g, "").replace(",", "."))) }), "Facture enregistrée.")}>Enregistrer la facture</button>
-              {p.supplier_invoice_fcfa != null && <button className="primary" style={{ minHeight: 36 }} disabled={busy === p.id} onClick={() => act(p.id, () => supabase.rpc("mark_purchase_paid", { p_id: p.id }), "Marquée payée.")}>Marquer payée</button>}</div></>}
+              {p.supplier_invoice_fcfa != null && accs.length > 0 && <select value={payAcc} onChange={(e) => setPayAcc(e.target.value)} style={{ minHeight: 36, borderRadius: 10, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--text)" }}>{accs.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>}
+              {p.supplier_invoice_fcfa != null && <button className="primary" style={{ minHeight: 36 }} disabled={busy === p.id} onClick={() => act(p.id, () => accs.length ? supabase.rpc("pay_purchase", { p_id: p.id, p_account: payAcc, p_date: null, p_entry: crypto.randomUUID() }) : supabase.rpc("mark_purchase_paid", { p_id: p.id }), "Payée.")}>{accs.length ? "Payer" : "Marquer payée"}</button>}</div></>}
         </div>}
       </div>); })}
   </div>);

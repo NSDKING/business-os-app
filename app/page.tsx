@@ -11,6 +11,7 @@ import Business from "@/components/Business";
 import Catalogue from "@/components/Catalogue";
 import Stock from "@/components/Stock";
 import Purchases from "@/components/Purchases";
+import Money from "@/components/Money";
 import AddSheet from "@/components/AddSheet";
 import Discussions from "@/components/Discussions";
 import Invoices from "@/components/Invoices";
@@ -110,12 +111,12 @@ export default function Home() {
 }
 
 function BusinessArea({ ctx }: { ctx: Ctx }) {
-  const [v, setV] = useState<"directory" | "stock" | "purchases">("directory");
+  const [v, setV] = useState<"directory" | "stock" | "purchases" | "money">("directory");
   return (<>
     <div style={{ display: "flex", gap: 6, padding: "8px 12px 0" }}>
-      {([["directory", "Répertoire"], ["stock", "Stock"], ["purchases", "Achats"]] as const).map(([k, t]) => <button key={k} className={v === k ? "primary" : ""} style={{ flex: 1, minHeight: 38 }} onClick={() => setV(k)}>{t}</button>)}
+      {([["directory", "Répertoire"], ["stock", "Stock"], ["purchases", "Achats"], ["money", "Argent"]] as const).map(([k, t]) => <button key={k} className={v === k ? "primary" : ""} style={{ flex: 1, minHeight: 38 }} onClick={() => setV(k)}>{t}</button>)}
     </div>
-    {v === "directory" ? <Catalogue ctx={ctx} /> : v === "stock" ? <Stock ctx={ctx} /> : <Purchases ctx={ctx} />}
+    {v === "directory" ? <Catalogue ctx={ctx} /> : v === "stock" ? <Stock ctx={ctx} /> : v === "purchases" ? <Purchases ctx={ctx} /> : <Money ctx={ctx} />}
   </>);
 }
 
