@@ -9,6 +9,8 @@ import Compliance from "@/components/Compliance";
 import Notifications from "@/components/Notifications";
 import Business from "@/components/Business";
 import Catalogue from "@/components/Catalogue";
+import Stock from "@/components/Stock";
+import Purchases from "@/components/Purchases";
 import AddSheet from "@/components/AddSheet";
 import Discussions from "@/components/Discussions";
 import Invoices from "@/components/Invoices";
@@ -92,7 +94,7 @@ export default function Home() {
       {tab === "messages" && <MessagesArea ctx={ctx} online={online} isAdmin={isAdmin} onQueue={() => setPendingN(readQueue().length)} onFull={setFull} full={full} gear={gear} />}
       {tab === "drafts" && <Reports ctx={ctx} />}
       {tab === "documents" && <Invoices ctx={ctx} />}
-      {tab === "business" && <Catalogue ctx={ctx} />}
+      {tab === "business" && <BusinessArea ctx={ctx} />}
       {tab === "insights" && <Business ctx={ctx} />}
       {tab === "settings" && <Settings ctx={ctx} />}
       </div>
@@ -105,6 +107,16 @@ export default function Home() {
       </div>
     </div>
   );
+}
+
+function BusinessArea({ ctx }: { ctx: Ctx }) {
+  const [v, setV] = useState<"directory" | "stock" | "purchases">("directory");
+  return (<>
+    <div style={{ display: "flex", gap: 6, padding: "8px 12px 0" }}>
+      {([["directory", "Répertoire"], ["stock", "Stock"], ["purchases", "Achats"]] as const).map(([k, t]) => <button key={k} className={v === k ? "primary" : ""} style={{ flex: 1, minHeight: 38 }} onClick={() => setV(k)}>{t}</button>)}
+    </div>
+    {v === "directory" ? <Catalogue ctx={ctx} /> : v === "stock" ? <Stock ctx={ctx} /> : <Purchases ctx={ctx} />}
+  </>);
 }
 
 function MessagesArea({ ctx, online, isAdmin, onQueue, onFull, full, gear }: { ctx: Ctx; online: boolean; isAdmin: boolean; onQueue: () => void; onFull: (v: boolean) => void; full: boolean; gear: React.ReactNode }) {
