@@ -93,7 +93,7 @@ export default function Home() {
     { t: "business", label: "Entreprise", icon: "briefcase" }, { t: "insights", label: "Chiffres", icon: "chart" }];
   if (worker === null) return <div className="shell"><div className="body muted">Chargement…</div></div>;
   if (worker) {
-    const back = <button className="big" style={{ margin: "8px 12px 0", minHeight: 52, fontSize: 18, display: "flex", alignItems: "center", gap: 8 }} onClick={() => { setHome(true); setFull(false); }}><Icon name="back" size={24} />Accueil</button>;
+    const back = <button className="big" style={{ margin: "8px 12px 0", width: "calc(100% - 24px)", boxSizing: "border-box", minHeight: 52, fontSize: 18, display: "flex", alignItems: "center", gap: 8 }} onClick={() => { setHome(true); setFull(false); }}><Icon name="back" size={24} />Accueil</button>;
     return (<div className="shell"><div className="main">
       {!online && <div className="offline">Pas de réseau · vos envois partiront tout seuls dès que le réseau revient{pendingN ? ` (${pendingN} en attente)` : ""}</div>}
       {online && pendingN > 0 && <div className="offline">Envoi en cours… ({pendingN})</div>}
@@ -300,7 +300,7 @@ function Settings({ ctx }: { ctx: Ctx }) {
           <div key={t.member_id} style={{ padding: "10px 0", borderTop: "1px solid var(--line)" }}>
             <div style={{ display: "flex", gap: 10, alignItems: "center" }}><Avatar name={t.name} src={t.avatar} size={36} /><b>{t.name}</b></div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
-              {channels.map((c) => (
+              {channels.filter((c) => !c.name.startsWith("direct:")).map((c) => (
                 <label key={c.id} className={"chips"} style={{ display: "inline-flex", gap: 6, alignItems: "center", minHeight: 40 }}>
                   <input type="checkbox" style={{ width: 22, minHeight: 22 }} checked={t.chans.has(c.id)} onChange={(e) => toggle(t.member_id, c.id, e.target.checked)} />{c.name}
                 </label>))}
