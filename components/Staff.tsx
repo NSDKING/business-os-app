@@ -22,7 +22,7 @@ export default function Staff({ ctx }: { ctx: Ctx }) {
   const [slips, setSlips] = useState<Slip[]>([]); const [accs, setAccs] = useState<Acc[]>([]); const [acct, setAcct] = useState("");
   const [date, setDate] = useState(iso(new Date())); const [monthBack, setMonthBack] = useState<0 | 1>(0);
   const [adding, setAdding] = useState(false); const [nw, setNw] = useState({ name: "", role: "", salary: "", alias: "" });
-  const [open, setOpen] = useState(""); const [advAmt, setAdvAmt] = useState(""); const [bonus, setBonus] = useState<Record<string, string>>({}); const [sal, setSal] = useState("");
+  const [open, setOpen] = useState(""); const [advAmt, setAdvAmt] = useState(""); const [bonus, setBonus] = useState<Record<string, string>>({}); const [other, setOther] = useState<Record<string, string>>({}); const [wdays, setWdays] = useState<Record<string, string>>({}); const [dedIn, setDedIn] = useState<Record<string, string>>({}); const [sal, setSal] = useState("");
   const [logo, setLogo] = useState<string | null>(null);
   const [msg, setMsg] = useState(""); const [busy, setBusy] = useState("");
   const now = new Date(); const mStart = new Date(now.getFullYear(), now.getMonth() - monthBack, 1); const mEnd = new Date(now.getFullYear(), now.getMonth() - monthBack + 1, 1);
@@ -99,8 +99,8 @@ export default function Staff({ ctx }: { ctx: Ctx }) {
 
     {emps.length > 0 && <div className="card"><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><h3 style={{ margin: 0 }}>Paie · {monthLabel}</h3>
       <div className="chips" style={{ padding: 0 }}><button className={monthBack === 0 ? "on" : ""} onClick={() => setMonthBack(0)}>Ce mois</button><button className={monthBack === 1 ? "on" : ""} onClick={() => setMonthBack(1)}>Mois dernier</button></div></div>
-      <div className="muted" style={{ fontSize: 12, margin: "4px 0 8px" }}>Salaire, moins les jours d&apos;absence (salaire ÷ 26 par jour), moins les avances, plus la prime. Sans cotisations ni impôts.</div>
-      {emps.map((e) => { const s = slipOf(e.id); const ab = absentIn(e.id); const ad = pend(e.id); const ded = Math.round(e.monthly_salary_fcfa / 26 * ab); const b = num(bonus[e.id] ?? "") || 0; const net = e.monthly_salary_fcfa + b - ded - ad; return (
+      <div className="muted" style={{ fontSize: 12, margin: "4px 0 8px" }}>Partez du salaire de base et ajustez vous-même : jours du mois, retenue d&apos;absences (calculée par défaut), prime, autres retenues. Le net se met à jour. Sans cotisations ni impôts.</div>
+      {emps.map((e) => { const s = slipOf(e.id); const ab = absentIn(e.id); const ad = pend(e.id); const wd = Math.max(1, num(wdays[e.id] ?? "") || 26); const auto = Math.round(e.monthly_salary_fcfa / wd * ab); const dRaw = dedIn[e.id]; const ded = dRaw !== undefined && dRaw !== "" ? (num(dRaw) || 0) : auto; const b = num(bonus[e.id] ?? "") || 0; const o = num(other[e.id] ?? "") || 0; const net = e.monthly_salary_fcfa + b - ded - ad - o; return (
         <div key={e.id} style={{ borderTop: "1px solid var(--line)", padding: "10px 0" }}>
           {s ? <>
             <div style={{ display: "flex", justifyContent: "space-between" }}><b>{e.name}</b><span className="muted">{s.status === "paid" ? `Payée le ${new Date(s.paid_at!).toLocaleDateString("fr-FR")}` : "À payer"}</span></div>
@@ -110,9 +110,13 @@ export default function Staff({ ctx }: { ctx: Ctx }) {
               {s.status === "draft" && accs.length > 0 && <><div style={{ minWidth: 130, flex: 1 }}>{AccSelect}</div><button className="primary" style={{ minHeight: 44 }} disabled={busy === s.id} onClick={() => act(s.id, () => supabase.rpc("pay_payslip", { p_id: s.id, p_account: acct, p_date: null, p_entry: crypto.randomUUID() }), "Paie enregistrée : l'argent est sorti du compte.")}>Payer</button></>}
               {s.status === "draft" && <button style={{ minHeight: 36 }} disabled={busy === s.id} onClick={() => { if (window.confirm("Annuler cette fiche ?")) act(s.id, () => supabase.rpc("cancel_payslip", { p_id: s.id }), "Fiche annulée."); }}>Annuler</button>}</div></> : <>
             <div style={{ display: "flex", justifyContent: "space-between" }}><b>{e.name}</b><b>{n0(net)} FCFA</b></div>
-            <div className="muted" style={{ fontSize: 13 }}>{n0(e.monthly_salary_fcfa)}{ab ? ` − ${ab} abs. (${n0(ded)})` : ""}{ad ? ` − avances ${n0(ad)}` : ""}{b ? ` + prime ${n0(b)}` : ""}</div>
-            <div style={{ display: "flex", gap: 8, marginTop: 6 }}><input inputMode="numeric" style={{ flex: 1 }} placeholder="Prime (facultatif)" value={bonus[e.id] ?? ""} onChange={(x) => setBonus({ ...bonus, [e.id]: x.target.value })} />
-              <button style={{ minHeight: 44 }} disabled={busy === e.id || net < 0} onClick={() => act(e.id, () => supabase.rpc("prepare_payslip", { p_business: ctx.business_id, p_employee: e.id, p_month: iso(mStart), p_bonus: b, p_other: 0, p_note: null, p_id: crypto.randomUUID() }), "Fiche de paie préparée.")}>Préparer</button></div></>}
+            <div className="muted" style={{ fontSize: 13 }}>Salaire de base {n0(e.monthly_salary_fcfa)} · {ab} jour{ab > 1 ? "s" : ""} d&apos;absence · avances {n0(ad)}</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 6 }}>
+              <label className="muted" style={{ fontSize: 12 }}>Jours du mois<input inputMode="numeric" placeholder="26" value={wdays[e.id] ?? ""} onChange={(x) => setWdays({ ...wdays, [e.id]: x.target.value })} /></label>
+              <label className="muted" style={{ fontSize: 12 }}>Retenue absences<input inputMode="numeric" placeholder={String(auto)} value={dedIn[e.id] ?? ""} onChange={(x) => setDedIn({ ...dedIn, [e.id]: x.target.value })} /></label>
+              <label className="muted" style={{ fontSize: 12 }}>Prime<input inputMode="numeric" value={bonus[e.id] ?? ""} onChange={(x) => setBonus({ ...bonus, [e.id]: x.target.value })} /></label>
+              <label className="muted" style={{ fontSize: 12 }}>Autres retenues<input inputMode="numeric" value={other[e.id] ?? ""} onChange={(x) => setOther({ ...other, [e.id]: x.target.value })} /></label></div>
+            <button className="primary" style={{ minHeight: 44, marginTop: 8, width: "100%" }} disabled={busy === e.id || net < 0} onClick={() => act(e.id, () => supabase.rpc("prepare_payslip_custom", { p_business: ctx.business_id, p_employee: e.id, p_month: iso(mStart), p_work_days: wd, p_absence_deduction: ded, p_bonus: b, p_other: o, p_note: null, p_id: crypto.randomUUID() }), "Fiche de paie préparée.")}>Préparer · net {n0(net)} FCFA</button></>}
         </div>); })}</div>}
   </div>);
 }
