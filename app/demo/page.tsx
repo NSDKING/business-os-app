@@ -18,7 +18,8 @@ export default function Demo() {
       const kind = new URLSearchParams(window.location.search).get("d") === "tv" ? "tv" : "farm";
       const { error } = await supabase.rpc("enter_demo", { p_demo: kind });
       if (error) return setErr("La démo n'est pas disponible pour le moment.");
-      window.location.href = "/";
+      const vue = new URLSearchParams(window.location.search).get("vue");
+      window.location.href = vue === "employe" ? "/?vue=employe" : "/";
     })();
   }, []);
   return (
