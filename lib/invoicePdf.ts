@@ -1,6 +1,6 @@
 // Invoice as a PDF file (P-020). jsPDF is loaded only when someone taps the button, so phones that never use it do not download it.
 export type PdfLine = { label: string; qty: number; unit_price: number; total: number };
-export type PdfInvoice = { number: string | null; customer: string; lines: PdfLine[]; total_fcfa: number; vat_rate: number; vat_fcfa: number; ttc_fcfa: number | null; seller_niu: string | null; customer_niu: string | null; status: string; date: string };
+export type PdfInvoice = { number: string | null; customer: string; lines: PdfLine[]; total_fcfa: number; vat_rate: number; vat_fcfa: number; ttc_fcfa: number | null; seller_niu: string | null; customer_niu: string | null; status: string; date: string; title?: string; validUntil?: string };
 
 // Plain spaces between thousands: the PDF's built-in font cannot draw the narrow space that toLocaleString uses.
 const money = (v: number) => String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
@@ -15,10 +15,11 @@ export async function invoicePdf(i: PdfInvoice, business: string, logo?: string 
     try { const pr = doc.getImageProperties(logo); const h = Math.min(22, (pr.height / pr.width) * 45), w = h * (pr.width / pr.height); doc.addImage(logo, "PNG", M, 14, w, h); nameY = 14 + h + 6; y = Math.max(y, nameY); } catch { /* bad logo: skip */ }
   }
   doc.setTextColor(...green); doc.setFont("helvetica", "bold"); doc.setFontSize(18); doc.text(business, M, nameY);
-  doc.setFontSize(22); doc.text("FACTURE", W - M, y, { align: "right" });
+  doc.setFontSize(22); doc.text(i.title ?? "FACTURE", W - M, y, { align: "right" });
   doc.setTextColor(32, 41, 35); doc.setFont("helvetica", "normal"); doc.setFontSize(10); y += 8;
   doc.text(`N° ${i.number ?? "(brouillon)"}`, W - M, y, { align: "right" }); y += 5;
   doc.text(`Date : ${i.date}`, W - M, y, { align: "right" });
+  if (i.validUntil) { y += 5; doc.text(`Valable jusqu'au ${i.validUntil}`, W - M, y, { align: "right" }); y -= 5; }
   if (i.seller_niu) { doc.text(`NIU : ${i.seller_niu}`, M, y); }
   y += 14;
   doc.setFont("helvetica", "bold"); doc.text("Facturé à", M, y); doc.setFont("helvetica", "normal"); y += 6;
@@ -42,6 +43,6 @@ export async function invoicePdf(i: PdfInvoice, business: string, logo?: string 
   doc.setFontSize(12); row(i.vat_rate > 0 ? "Total TTC" : "Total", `${money(i.ttc_fcfa ?? i.total_fcfa)} FCFA`, true);
   if (i.status === "void") { doc.setTextColor(199, 71, 71); doc.setFontSize(40); doc.text("ANNULÉE", W / 2, 150, { align: "center", angle: 30 }); }
   if (i.status === "draft") { doc.setTextColor(150, 150, 150); doc.setFontSize(40); doc.text("BROUILLON", W / 2, 150, { align: "center", angle: 30 }); }
-  const name = `Facture-${(i.number ?? "brouillon").replace(/[^\w-]+/g, "_")}.pdf`;
+  const name = `${(i.title ?? "Facture").charAt(0) + (i.title ?? "Facture").slice(1).toLowerCase()}-${(i.number ?? "brouillon").replace(/[^\w-]+/g, "_")}.pdf`;
   return new File([doc.output("blob")], name, { type: "application/pdf" });
 }

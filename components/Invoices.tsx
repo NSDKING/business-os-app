@@ -15,7 +15,7 @@ const BILLABLE: Record<string, string> = { chicken_order: "Vente de poulets", lo
 const STATUS: Record<string, string> = { draft: "Brouillon", issued: "Émise", void: "Annulée" };
 
 export default function Invoices({ ctx }: { ctx: Ctx }) {
-  const [invs, setInvs] = useState<Inv[]>([]); const [cands, setCands] = useState<Cand[]>([]);
+  const [inSales, setInSales] = useState<Set<string>>(new Set()); const [invs, setInvs] = useState<Inv[]>([]); const [cands, setCands] = useState<Cand[]>([]);
   const [tax, setTax] = useState({ on: false, rate: "19.25", niu: "" }); const [admin, setAdmin] = useState(false); const [saved, setSaved] = useState(""); const [logo, setLogo] = useState<string | null>(null);
   const [can, setCan] = useState(false); const [err, setErr] = useState(""); const [busy, setBusy] = useState(""); const [open, setOpen] = useState("");
 
@@ -34,6 +34,8 @@ export default function Invoices({ ctx }: { ctx: Ctx }) {
       const t = tn.get(r.record_type_id)!; const f = r.fields as Record<string, unknown>;
       return { id: r.id, type: t, who: String(f.customer ?? f.destination ?? f.advertiser ?? "?"), at: r.occurred_at };
     }));
+    const { data: so } = await supabase.from("sales_order").select("source_record_id").eq("business_id", ctx.business_id).neq("status", "cancelled").not("source_record_id", "is", null);
+    setInSales(new Set((so ?? []).map((x) => x.source_record_id as string)));
     const { data: bz } = await supabase.from("business").select("vat_enabled,vat_rate,niu,logo").eq("id", ctx.business_id).single();
     if (bz) setLogo(bz.logo ?? null);
     if (bz) setTax({ on: bz.vat_enabled, rate: String(bz.vat_rate), niu: bz.niu ?? "" });
@@ -99,10 +101,10 @@ export default function Invoices({ ctx }: { ctx: Ctx }) {
       {tax.on && <p><input inputMode="decimal" placeholder="Taux (%)" value={tax.rate} onChange={(e) => setTax({ ...tax, rate: e.target.value })} /></p>}
       <p><input placeholder="Votre NIU (facultatif)" value={tax.niu} onChange={(e) => setTax({ ...tax, niu: e.target.value })} /></p>
       <button onClick={saveTax}>Enregistrer</button> {saved && <b>{saved}</b>}</div>}
-    {can && cands.length > 0 && <div className="card">
+    {can && cands.filter((c) => !inSales.has(c.id)).length > 0 && <div className="card">
       <h3 style={{ marginBottom: 2 }}>À facturer</h3>
       <div className="muted" style={{ marginBottom: 6 }}>Commandes approuvées des 60 derniers jours sans facture</div>
-      {cands.slice(0, 15).map((c) => <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "8px 0", borderTop: "1px solid var(--line)" }}>
+      {cands.filter((c) => !inSales.has(c.id)).slice(0, 15).map((c) => <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "8px 0", borderTop: "1px solid var(--line)" }}>
         <span>{c.who}<div className="muted" style={{ fontSize: 12 }}>{BILLABLE[c.type]} · {day(c.at)}</div></span>
         <button disabled={busy === c.id} style={{ minHeight: 36 }} onClick={() => createAndDownload(c.id)}>Créer la facture</button></div>)}
     </div>}
