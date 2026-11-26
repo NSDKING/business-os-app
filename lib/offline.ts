@@ -34,7 +34,14 @@ export async function offlineFetch(input: RequestInfo | URL, init?: RequestInit)
   const body = !rest || method === "GET" || method === "HEAD" ? null : await req.clone().text();
   const cacheKey = `https://bos.local/${encodeURIComponent(url + "|" + (body ?? ""))}`;
   try {
-    const res = await fetch(req.clone());
+    // On a weak network a request can hang instead of failing. Reads give up after 8 s and use the local copy;
+    // when the phone itself says it is offline, nothing waits at all.
+    if (rest && typeof navigator !== "undefined" && navigator.onLine === false) throw new TypeError("offline");
+    let res: Response;
+    if (isRead) {
+      const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), 8000);
+      try { res = await fetch(new Request(req.clone(), { signal: ac.signal })); } finally { clearTimeout(timer); }
+    } else res = await fetch(req.clone());
     if (isRead && res.ok && typeof caches !== "undefined") { try { (await caches.open(CACHE)).put(cacheKey, res.clone()); } catch {} }
     return res;
   } catch (e) {
