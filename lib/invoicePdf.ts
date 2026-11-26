@@ -5,12 +5,16 @@ export type PdfInvoice = { number: string | null; customer: string; lines: PdfLi
 // Plain spaces between thousands: the PDF's built-in font cannot draw the narrow space that toLocaleString uses.
 const money = (v: number) => String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 
-export async function invoicePdf(i: PdfInvoice, business: string): Promise<File> {
+export async function invoicePdf(i: PdfInvoice, business: string, logo?: string | null): Promise<File> {
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const W = 210, M = 18; let y = 24;
   const green: [number, number, number] = [20, 92, 67];
-  doc.setTextColor(...green); doc.setFont("helvetica", "bold"); doc.setFontSize(18); doc.text(business, M, y);
+  let nameY = y;
+  if (logo) {
+    try { const pr = doc.getImageProperties(logo); const h = Math.min(22, (pr.height / pr.width) * 45), w = h * (pr.width / pr.height); doc.addImage(logo, "PNG", M, 14, w, h); nameY = 14 + h + 6; y = Math.max(y, nameY); } catch { /* bad logo: skip */ }
+  }
+  doc.setTextColor(...green); doc.setFont("helvetica", "bold"); doc.setFontSize(18); doc.text(business, M, nameY);
   doc.setFontSize(22); doc.text("FACTURE", W - M, y, { align: "right" });
   doc.setTextColor(32, 41, 35); doc.setFont("helvetica", "normal"); doc.setFontSize(10); y += 8;
   doc.text(`N° ${i.number ?? "(brouillon)"}`, W - M, y, { align: "right" }); y += 5;
