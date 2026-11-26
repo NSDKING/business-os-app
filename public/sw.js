@@ -16,3 +16,18 @@ self.addEventListener("notificationclick", (e) => {
     return self.clients.openWindow(url);
   }));
 });
+
+// Offline shell (P-022): the app opens without a connection. Pages: network first, last copy when offline. Built files: cache first.
+const SHELL = "bos-shell-v1";
+self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
+self.addEventListener("fetch", (e) => {
+  const r = e.request; const u = new URL(r.url);
+  if (r.method !== "GET" || u.origin !== self.location.origin) return;
+  if (r.mode === "navigate") {
+    e.respondWith(fetch(r).then((res) => { const c = res.clone(); caches.open(SHELL).then((x) => x.put(r, c)); return res; })
+      .catch(() => caches.match(r).then((m) => m || caches.match("/") || Response.error())));
+  } else if (u.pathname.startsWith("/_next/static/") || /\.(png|svg|ico|webmanifest)$/.test(u.pathname)) {
+    e.respondWith(caches.match(r).then((m) => m || fetch(r).then((res) => { const c = res.clone(); caches.open(SHELL).then((x) => x.put(r, c)); return res; })));
+  }
+});

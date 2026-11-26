@@ -1,10 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
+import { offlineFetch, setTokenGetter } from "./offline";
 
 export const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-  { auth: { persistSession: true, autoRefreshToken: true } }
+  { auth: { persistSession: true, autoRefreshToken: true }, global: { fetch: offlineFetch } }
 );
+setTokenGetter(async () => (await supabase.auth.getSession()).data.session?.access_token ?? null);
 
 export type Channel = { id: string; business_id: string; unit_id: string; name: string };
 export type Message = {

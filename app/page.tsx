@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase, type Channel, type Draft, type Message } from "@/lib/supabase";
 import { enqueue, flushQueue, readQueue } from "@/lib/queue";
+import { flushActions, readActions, readConflicts, clearConflicts, wipeLocalCopy, type Conflict } from "@/lib/offline";
 import ReviewCard from "@/components/ReviewCard";
 import Approvers from "@/components/Approvers";
 import Compliance from "@/components/Compliance";
@@ -27,10 +28,11 @@ export default function Home() {
     fit(); vv?.addEventListener("resize", fit); vv?.addEventListener("scroll", fit); window.addEventListener("orientationchange", fit); window.addEventListener("focusout", () => setTimeout(fit, 100));
     return () => { vv?.removeEventListener("resize", fit); vv?.removeEventListener("scroll", fit); window.removeEventListener("orientationchange", fit); };
   }, []);
+  useEffect(() => { if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {}); }, []);
   const [ctx, setCtx] = useState<Ctx | null | undefined>(undefined);
   const [tab, setTab] = useState<Tab>("messages");
   const [online, setOnline] = useState(true);
-  const [pendingN, setPendingN] = useState(0);
+  const [pendingN, setPendingN] = useState(0); const [conflicts, setConflicts] = useState<Conflict[]>([]);
   const [full, setFull] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
 
@@ -56,11 +58,14 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const up = async () => { setOnline(true); await flushQueue(); setPendingN(readQueue().length); };
+    const count = () => { setPendingN(readQueue().length + readActions().length); setConflicts(readConflicts()); };
+    const sync = async () => { await flushQueue(); await flushActions(); count(); };
+    const up = async () => { setOnline(true); await sync(); };
     const down = () => setOnline(false);
-    setOnline(navigator.onLine); setPendingN(readQueue().length);
-    window.addEventListener("online", up); window.addEventListener("offline", down);
-    return () => { window.removeEventListener("online", up); window.removeEventListener("offline", down); };
+    setOnline(navigator.onLine); count(); if (navigator.onLine) sync();
+    window.addEventListener("online", up); window.addEventListener("offline", down); window.addEventListener("bos-offline-change", count);
+    const t = setInterval(() => { if (navigator.onLine && (readQueue().length || readActions().length)) sync(); }, 20000);
+    return () => { window.removeEventListener("online", up); window.removeEventListener("offline", down); window.removeEventListener("bos-offline-change", count); clearInterval(t); };
   }, []);
 
   if (ctx === undefined) return <div className="shell"><div className="body muted">Chargement…</div></div>;
@@ -78,7 +83,12 @@ export default function Home() {
     <div className="shell">
       <div className="main">
       {tab !== "messages" && <div className="top"><span>{tab === "settings" ? "Réglages" : ctx.business}</span><span style={{ display: "flex", alignItems: "center", gap: 8 }}><span className="muted" style={{ fontSize: 14, fontWeight: 400 }}>{ctx.name}</span>{tab !== "settings" && gear}</span></div>}
-      {!online && <div className="offline">Hors ligne · vos messages partiront dès le retour du réseau{pendingN ? ` (${pendingN})` : ""}</div>}
+      {!online && <div className="offline">Hors ligne · tout ce que vous faites partira dès le retour du réseau{pendingN ? ` (${pendingN} en attente)` : ""}</div>}
+      {online && pendingN > 0 && <div className="offline">Envoi en cours… ({pendingN} en attente)</div>}
+      {conflicts.length > 0 && <div className="card" style={{ margin: "8px 12px", borderLeft: "4px solid var(--pending)" }}>
+        <b>Une action faite hors ligne n'a pas pu être appliquée</b>
+        {conflicts.map((c) => <div key={c.id} className="muted" style={{ fontSize: 13 }}>{c.name} · {new Date(c.at).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })} : {c.reason}. Quelqu'un l'a peut-être déjà fait ; vérifiez la situation actuelle puis recommencez si besoin.</div>)}
+        <button style={{ minHeight: 36, marginTop: 6 }} onClick={() => { clearConflicts(); setConflicts([]); }}>Compris</button></div>}
       {tab === "messages" && <MessagesArea ctx={ctx} online={online} isAdmin={isAdmin} onQueue={() => setPendingN(readQueue().length)} onFull={setFull} full={full} gear={gear} />}
       {tab === "drafts" && <Reports ctx={ctx} />}
       {tab === "documents" && <Invoices ctx={ctx} />}
@@ -262,6 +272,6 @@ function Settings({ ctx }: { ctx: Ctx }) {
         {link && <p className="muted" style={{ wordBreak: "break-all" }}>Envoyez ce lien par WhatsApp (valable 7 jours, une seule fois). La personne ne verra aucun groupe tant que vous ne les avez pas cochés ci-dessus :<br /><b>{link}</b></p>}
       </div>
     </>)}
-    <button className="big" onClick={async () => { await supabase.auth.signOut(); location.reload(); }}>Se déconnecter</button>
+    <button className="big" onClick={async () => { await supabase.auth.signOut(); await wipeLocalCopy(); location.reload(); }}>Se déconnecter</button>
   </div>);
 }
