@@ -42,8 +42,8 @@ function preview(i: Item) {
   return i.kind === "group" && i.last_sender ? <>{i.last_sender.split(" ")[0]} : {body}</> : <>{body}</>;
 }
 
-export default function Chats({ ctx, online, isAdmin, onQueue, onFull, jump }: {
-  ctx: Ctx; online: boolean; isAdmin: boolean; onQueue: () => void; onFull: (full: boolean) => void; jump?: { channel: string; message: string };
+export default function Chats({ ctx, online, isAdmin, onQueue, onFull, jump, simple }: {
+  simple?: boolean; ctx: Ctx; online: boolean; isAdmin: boolean; onQueue: () => void; onFull: (full: boolean) => void; jump?: { channel: string; message: string };
 }) {
   const [screen, setScreen] = useState<Screen>({ s: "list" });
   const [items, setItems] = useState<Item[]>([]);
@@ -108,11 +108,11 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull, jump }: {
       <span style={{ fontSize: 34, fontWeight: 700, letterSpacing: -0.5 }}>Messages</span>
       <button onClick={() => go({ s: "new" })} aria-label="Nouvelle discussion" style={{ border: 0, background: "none", minWidth: 44, color: "var(--text)", display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name="edit" size={27} /></button></div>
     <SearchBox value={q} onChange={setQ} placeholder="Rechercher une personne ou un groupe" />
-    <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "2px 16px 12px" }}>
+    {!simple && <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "2px 16px 12px" }}>
       {([["all", "Tout"], ["unread", "Non lus"], ["groups", "Groupes"], ["tagged", "Étiquetés"], ["saved", "Enregistrés"], ["tasks", "Tâches"], ["search", "Recherche"]] as const).map(([k, l]) =>
         <button key={k} style={chipStyle(tab === k)} onClick={() => setTab(k)}>{l}</button>)}
-    </div>
-    {!["tagged", "saved", "tasks", "search"].includes(tab) && (() => {
+    </div>}
+    {!simple && !["tagged", "saved", "tasks", "search"].includes(tab) && (() => {
       const units = [...new Set(items.map((i) => i.unit_name).filter(Boolean))] as string[];
       if (units.length < 2) return null;
       const chip = chipStyle;

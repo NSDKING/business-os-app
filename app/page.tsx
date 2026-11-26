@@ -100,7 +100,7 @@ export default function Home() {
       {home && <div style={{ padding: "8px 12px 0" }}><ConflictDrafts /></div>}
       {home ? <WorkerHome ctx={ctx} online={online} onMessages={() => { setHome(false); setTab("messages"); }} onSettings={() => { setHome(false); setTab("settings"); }} /> : <>
         {back}
-        {tab === "messages" && <MessagesArea ctx={ctx} online={online} isAdmin={isAdmin} onQueue={() => setPendingN(readQueue().length)} onFull={setFull} full={full} gear={null} />}
+        {tab === "messages" && <MessagesArea ctx={ctx} online={online} isAdmin={isAdmin} onQueue={() => setPendingN(readQueue().length)} onFull={setFull} full={full} gear={null} simple />}
         {tab === "settings" && <Settings ctx={ctx} />}
 </>}
     </div></div>);
@@ -150,15 +150,15 @@ function BusinessArea({ ctx, jump }: { ctx: Ctx; jump?: Jump | null }) {
   </>);
 }
 
-function MessagesArea({ ctx, online, isAdmin, onQueue, onFull, full, gear, jump }: { ctx: Ctx; online: boolean; isAdmin: boolean; onQueue: () => void; onFull: (v: boolean) => void; full: boolean; gear: React.ReactNode; jump?: { channel: string; message: string } }) {
+function MessagesArea({ ctx, online, isAdmin, onQueue, onFull, full, gear, jump, simple }: { ctx: Ctx; online: boolean; isAdmin: boolean; onQueue: () => void; onFull: (v: boolean) => void; full: boolean; gear: React.ReactNode; jump?: { channel: string; message: string }; simple?: boolean }) {
   const [v, setV] = useState<"team" | "customers">("team");
   return (<>
-    {!full && <div style={{ display: "flex", gap: 6, padding: "8px 12px 0", alignItems: "center" }}>
+    {!full && !simple && <div style={{ display: "flex", gap: 6, padding: "8px 12px 0", alignItems: "center" }}>
       <button className={v === "team" ? "primary" : ""} style={{ flex: 1, minHeight: 38 }} onClick={() => setV("team")}>Équipe</button>
       <button className={v === "customers" ? "primary" : ""} style={{ flex: 1, minHeight: 38 }} onClick={() => setV("customers")}>Clients</button>
       {gear}
     </div>}
-    {v === "team" || full ? <Chats ctx={ctx} online={online} isAdmin={isAdmin} onQueue={onQueue} onFull={onFull} jump={jump} /> : <Discussions ctx={ctx} />}
+    {v === "team" || full || simple ? <Chats simple={simple} ctx={ctx} online={online} isAdmin={isAdmin} onQueue={onQueue} onFull={onFull} jump={jump} /> : <Discussions ctx={ctx} />}
   </>);
 }
 
