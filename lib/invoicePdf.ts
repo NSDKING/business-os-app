@@ -1,6 +1,6 @@
 // Invoice as a PDF file (P-020). jsPDF is loaded only when someone taps the button, so phones that never use it do not download it.
 export type PdfLine = { label: string; qty: number; unit_price: number; total: number };
-export type PdfInvoice = { number: string | null; customer: string; lines: PdfLine[]; total_fcfa: number; vat_rate: number; vat_fcfa: number; ttc_fcfa: number | null; seller_niu: string | null; customer_niu: string | null; status: string; date: string; title?: string; validUntil?: string; paid?: number };
+export type PdfInvoice = { number: string | null; customer: string; lines: PdfLine[]; total_fcfa: number; vat_rate: number; vat_fcfa: number; ttc_fcfa: number | null; seller_niu: string | null; customer_niu: string | null; status: string; date: string; title?: string; partyLabel?: string; validUntil?: string; paid?: number };
 
 // Plain spaces between thousands: the PDF's built-in font cannot draw the narrow space that toLocaleString uses.
 const money = (v: number) => String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
@@ -22,7 +22,7 @@ export async function invoicePdf(i: PdfInvoice, business: string, logo?: string 
   if (i.validUntil) { y += 5; doc.text(`Valable jusqu'au ${i.validUntil}`, W - M, y, { align: "right" }); y -= 5; }
   if (i.seller_niu) { doc.text(`NIU : ${i.seller_niu}`, M, y); }
   y += 14;
-  doc.setFont("helvetica", "bold"); doc.text("Facturé à", M, y); doc.setFont("helvetica", "normal"); y += 6;
+  doc.setFont("helvetica", "bold"); doc.text(i.partyLabel ?? "Facturé à", M, y); doc.setFont("helvetica", "normal"); y += 6;
   doc.text(i.customer, M, y); y += 5;
   if (i.customer_niu) { doc.text(`NIU : ${i.customer_niu}`, M, y); y += 5; }
   y += 8;

@@ -15,7 +15,8 @@ export default function Start() {
       session = data.session;
     }
     const { data: id, error } = await supabase.rpc("create_business", { p_name: name, p_owner: owner, p_kind: kind, p_code: code });
-    if (error) { setBusy(false); return setErr(/wrong code/.test(error.message) ? "Code incorrect." : /too many/.test(error.message) ? "Trois entreprises au maximum par compte." : "Création impossible pour le moment."); }
+    if (!error && !id) { setBusy(false); return setErr("Code incorrect."); }
+    if (error) { setBusy(false); return setErr(/too many attempts/.test(error.message) ? "Trop d'essais. Réessayez dans une heure." : /wrong code/.test(error.message) ? "Code incorrect." : /too many/.test(error.message) ? "Trois entreprises au maximum par compte." : "Création impossible pour le moment."); }
     try { localStorage.setItem("bos.business", id as string); } catch {}
     window.location.href = "/";
   }

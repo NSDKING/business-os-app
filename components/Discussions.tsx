@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { Ctx } from "./Chats";
 
-type Thread = { id: string; customer_name: string | null; customer_phone: string | null; status: string; handoff_reason: string | null; last_at: string };
+type Thread = { id: string; customer_name: string | null; customer_phone: string | null; status: string; handoff_reason: string | null; last_at: string; party_id: string | null };
 type Msg = { id: string; thread_id: string; role: string; text: string; created_at: string };
 const ST: Record<string, string> = { ai: "IA", needs_human: "À traiter", human: "En cours", closed: "Clos" };
 const when = (iso: string) => new Date(iso).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" });
@@ -12,15 +12,18 @@ const when = (iso: string) => new Date(iso).toLocaleString("fr-FR", { dateStyle:
 export default function Discussions({ ctx }: { ctx: Ctx }) {
   const [threads, setThreads] = useState<Thread[]>([]); const [open, setOpen] = useState(""); const [msgs, setMsgs] = useState<Msg[]>([]);
   const [can, setCan] = useState(false); const [admin, setAdmin] = useState(false); const [text, setText] = useState(""); const [err, setErr] = useState("");
+  const [custs, setCusts] = useState<{ id: string; name: string }[]>([]);
   const [cfg, setCfg] = useState({ on: false, slug: "", profile: "" }); const [saved, setSaved] = useState("");
 
   const load = useCallback(async () => {
     const [{ data: th }, { data: bz }, { data: me }] = await Promise.all([
-      supabase.from("customer_thread").select("id,customer_name,customer_phone,status,handoff_reason,last_at").eq("business_id", ctx.business_id).order("last_at", { ascending: false }).limit(50),
+      supabase.from("customer_thread").select("id,customer_name,customer_phone,status,handoff_reason,last_at,party_id").eq("business_id", ctx.business_id).order("last_at", { ascending: false }).limit(50),
       supabase.from("business").select("public_chat_enabled,public_slug,public_profile").eq("id", ctx.business_id).single(),
       supabase.from("member").select("id").eq("business_id", ctx.business_id).eq("person_id", ctx.person_id).limit(1),
     ]);
     setThreads((th as Thread[]) ?? []);
+    const { data: pc } = await supabase.from("party").select("id,name").eq("business_id", ctx.business_id).eq("kind", "customer").eq("active", true).order("name");
+    setCusts(pc ?? []);
     if (bz) setCfg({ on: bz.public_chat_enabled, slug: bz.public_slug ?? "", profile: bz.public_profile ?? "" });
     if (me?.[0]) {
       const { data: g } = await supabase.from("role_grant").select("permission").eq("member_id", me[0].id).in("permission", ["approve", "appoint"]).is("revoked_at", null);
@@ -44,6 +47,11 @@ export default function Discussions({ ctx }: { ctx: Ctx }) {
     const { error } = await supabase.rpc("staff_reply", { p_thread: open, p_text: t });
     if (error) return setErr("Impossible d'envoyer."); setText(""); loadMsgs(open); load();
   }
+  async function linkCustomer(party: string | null, create = false) {
+    setErr("");
+    const { error } = await supabase.rpc("link_thread_customer", { p_thread: open, p_party: party, p_create: create });
+    if (error) return setErr("Impossible de relier ce client."); load();
+  }
   async function setStatus(s: "ai" | "closed") { await supabase.rpc("set_thread_status", { p_thread: open, p_status: s }); load(); }
   async function saveCfg() {
     setSaved("");
@@ -58,6 +66,14 @@ export default function Discussions({ ctx }: { ctx: Ctx }) {
     <div className="card">
       <b>{cur.customer_name || "Client"}</b> <span className="pill pending">{ST[cur.status]}</span>
       <div className="muted" style={{ fontSize: 12 }}>{cur.customer_phone || "téléphone inconnu"}{cur.handoff_reason ? ` · ${cur.handoff_reason}` : ""}</div>
+      {can && <div style={{ margin: "8px 0", padding: "8px 0", borderTop: "1px solid var(--line)", borderBottom: "1px solid var(--line)" }}>
+        <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>Fiche client</div>
+        <select value={cur.party_id ?? ""} onChange={(e) => linkCustomer(e.target.value || null)} style={{ width: "100%" }}>
+          <option value="">Pas encore relié à un client</option>
+          {custs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        {!cur.party_id && <button style={{ minHeight: 36, marginTop: 6 }} onClick={() => linkCustomer(null, true)}>Créer « {cur.customer_name || "Client chat"} » comme nouveau client</button>}
+      </div>}
       {msgs.map((m) => <div key={m.id} style={{ margin: "8px 0", textAlign: m.role === "customer" ? "left" : "right" }}>
         <div className="muted" style={{ fontSize: 11 }}>{m.role === "customer" ? "Client" : m.role === "ai" ? "Assistant IA" : "Équipe"} · {when(m.created_at)}</div>
         <div style={{ display: "inline-block", maxWidth: "90%", padding: "6px 10px", borderRadius: 12, background: m.role === "customer" ? "var(--soft)" : "var(--soft)", whiteSpace: "pre-wrap", textAlign: "left" }}>{m.text}</div></div>)}

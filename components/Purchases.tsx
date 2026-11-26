@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { Ctx } from "./Chats";
 import { useCanMaintain } from "./useCan";
+import { invoicePdf } from "@/lib/invoicePdf";
 
 type PLine = { item_id?: string | null; label: string; qty: number; unit_price: number; unit?: string; received?: number };
 type PO = { id: string; number: string | null; supplier_name: string; lines: PLine[]; total_fcfa: number; status: string; supplier_invoice_no: string | null; supplier_invoice_fcfa: number | null; paid_at: string | null; source_record_id: string | null; created_at: string };
@@ -19,7 +20,17 @@ export default function Purchases({ ctx }: { ctx: Ctx }) {
   const [pos, setPos] = useState<PO[]>([]); const [needs, setNeeds] = useState<Need[]>([]); const [sups, setSups] = useState<Party[]>([]); const [accs, setAccs] = useState<Acc[]>([]); const [payAcc, setPayAcc] = useState("");
   const [form, setForm] = useState<null | { source: string | null; supplier: string; name: string; lines: { label: string; qty: string; price: string }[] }>(null);
   const [recv, setRecv] = useState<Record<string, string[]>>({}); const [inv, setInv] = useState<Record<string, { no: string; amt: string }>>({});
-  const [msg, setMsg] = useState(""); const [busy, setBusy] = useState("");
+  const [msg, setMsg] = useState(""); const [busy, setBusy] = useState(""); const [logo, setLogo] = useState<string | null>(null);
+  useEffect(() => { supabase.from("business").select("logo").eq("id", ctx.business_id).single().then(({ data }) => setLogo(data?.logo ?? null)); }, [ctx.business_id]);
+  async function sharePdf(p: PO) {
+    setMsg("");
+    try {
+      const d = new Date(p.created_at).toLocaleDateString("fr-FR");
+      const file = await invoicePdf({ number: p.number, customer: p.supplier_name, lines: p.lines.map((l) => ({ label: l.label, qty: l.qty, unit_price: l.unit_price, total: l.qty * l.unit_price })), total_fcfa: p.total_fcfa, vat_rate: 0, vat_fcfa: 0, ttc_fcfa: null, seller_niu: null, customer_niu: null, status: "order", date: d, title: "BON DE COMMANDE", partyLabel: "Fournisseur" }, ctx.business, logo);
+      if (navigator.canShare?.({ files: [file] })) { try { await navigator.share({ files: [file], title: file.name }); return; } catch (e) { if ((e as Error).name === "AbortError") return; } }
+      const url = URL.createObjectURL(file); const a = document.createElement("a"); a.href = url; a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch { setMsg("Impossible de créer le PDF."); }
+  }
 
   const load = useCallback(async () => {
     const [{ data: p }, { data: s }, { data: rt }] = await Promise.all([
@@ -79,6 +90,7 @@ export default function Purchases({ ctx }: { ctx: Ctx }) {
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><b>{p.number ?? "Commande"} · {p.supplier_name}</b><span className="muted">{STATUS[p.status]}</span></div>
         {p.lines.map((l, i) => <div key={i} className="muted" style={{ fontSize: 13 }}>{l.label} : {n0(l.qty)}{l.received ? ` (reçu ${n0(l.received)})` : ""}{l.unit_price ? ` × ${n0(l.unit_price)}` : ""}</div>)}
         <div style={{ marginTop: 4 }}><b>{n0(p.total_fcfa)} FCFA</b> <span className="muted">· {day(p.created_at)}</span></div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>{p.status !== "cancelled" && <button style={{ minHeight: 36 }} onClick={() => sharePdf(p)}>Envoyer le bon (PDF)</button>}</div>
         {can && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
           {p.status === "draft" && <button className="primary" style={{ minHeight: 36 }} disabled={busy === p.id} onClick={() => act(p.id, () => supabase.rpc("order_purchase", { p_id: p.id }), "Commande passée.")}>Passer la commande</button>}
           {(p.status === "draft" || p.status === "ordered") && <button style={{ minHeight: 36 }} disabled={busy === p.id} onClick={() => { if (window.confirm("Annuler cette commande ?")) act(p.id, () => supabase.rpc("cancel_purchase", { p_id: p.id })); }}>Annuler</button>}
