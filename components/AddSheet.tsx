@@ -48,6 +48,10 @@ export default function AddSheet({ ctx, onClose, onDone }: { ctx: Ctx; onClose: 
       if (f.type === "integer") { const n = Number(raw.replace(/\s/g, "")); if (!Number.isFinite(n) || !Number.isInteger(n)) return setErr(`${LABEL[f.name] ?? f.name} doit être un nombre entier.`); out[f.name] = n; }
       else out[f.name] = raw;
     }
+    if (approve) for (const k of ["customer", "advertiser"]) {
+      const nm = typeof out[k] === "string" ? (out[k] as string) : "";
+      if (nm && !names.some((n) => n.trim().toLowerCase() === nm.toLowerCase()) && !window.confirm(`« ${nm} » n'est pas dans vos clients. L'ajouter comme nouveau client ?\n\nSi c'est un client existant mal écrit, faites Annuler et choisissez-le dans la liste.`)) return;
+    }
     setBusy(true);
     const { data: id, error } = await supabase.rpc("create_manual_draft", { p_business: ctx.business_id, p_type: sel.id, p_fields: out });
     if (error || !id) { setBusy(false); return setErr("Impossible d'enregistrer."); }
