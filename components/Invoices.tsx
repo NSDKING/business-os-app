@@ -19,6 +19,7 @@ export default function Invoices({ ctx }: { ctx: Ctx }) {
   const [tax, setTax] = useState({ on: false, rate: "19.25", niu: "" }); const [admin, setAdmin] = useState(false); const [saved, setSaved] = useState(""); const [logo, setLogo] = useState<string | null>(null);
   const [custs, setCusts] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => { supabase.from("party").select("id,name").eq("business_id", ctx.business_id).eq("kind", "customer").eq("active", true).order("name").then(({ data }) => setCusts(data ?? [])); }, [ctx.business_id]);
+  const [paid, setPaid] = useState<Record<string, number>>({});
   const [can, setCan] = useState(false); const [err, setErr] = useState(""); const [busy, setBusy] = useState(""); const [open, setOpen] = useState("");
 
   const load = useCallback(async () => {
@@ -30,6 +31,8 @@ export default function Invoices({ ctx }: { ctx: Ctx }) {
       supabase.from("member").select("id").eq("business_id", ctx.business_id).eq("person_id", ctx.person_id).limit(1),
     ]);
     const list = (iv as Inv[]) ?? []; setInvs(list);
+    const { data: pe } = await supabase.from("money_entry").select("invoice_id,amount_fcfa").eq("business_id", ctx.business_id).not("invoice_id", "is", null).is("voided_at", null);
+    const pm: Record<string, number> = {}; for (const e of pe ?? []) pm[e.invoice_id as string] = (pm[e.invoice_id as string] ?? 0) + Number(e.amount_fcfa); setPaid(pm);
     const live = new Set(list.filter((i) => i.status !== "void").map((i) => i.source_record_id));
     const tn = new Map((rts ?? []).map((r) => [r.id, r.name as string]));
     setCands((rs ?? []).filter((r) => BILLABLE[tn.get(r.record_type_id) ?? ""] && !live.has(r.id)).map((r) => {
@@ -72,7 +75,7 @@ export default function Invoices({ ctx }: { ctx: Ctx }) {
   }
   async function download(i: Inv) {
     try {
-      const file = await invoicePdf({ ...i, date: day(i.issued_at ?? i.created_at) }, ctx.business, logo);
+      const file = await invoicePdf({ ...i, paid: paid[i.id] ?? 0, date: day(i.issued_at ?? i.created_at) }, ctx.business, logo);
       const url = URL.createObjectURL(file); const a = document.createElement("a"); a.href = url; a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 10000);
     } catch { setErr("Facture créée, mais le PDF n'a pas pu être téléchargé : utilisez le bouton PDF."); }
   }
@@ -84,7 +87,7 @@ export default function Invoices({ ctx }: { ctx: Ctx }) {
   async function share(i: Inv) {
     setErr("");
     try {
-      const file = await invoicePdf({ ...i, date: day(i.issued_at ?? i.created_at) }, ctx.business, logo);
+      const file = await invoicePdf({ ...i, paid: paid[i.id] ?? 0, date: day(i.issued_at ?? i.created_at) }, ctx.business, logo);
       if (navigator.canShare?.({ files: [file] })) { try { await navigator.share({ files: [file], title: file.name }); return; } catch (e) { if ((e as Error).name === "AbortError") return; } }
       const url = URL.createObjectURL(file); const a = document.createElement("a"); a.href = url; a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 10000);
     } catch { setErr("Impossible de créer le PDF."); }
@@ -114,7 +117,11 @@ export default function Invoices({ ctx }: { ctx: Ctx }) {
     {invs.map((i) => <div key={i.id} className="card" style={{ opacity: i.status === "void" ? 0.55 : 1 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }} onClick={() => setOpen(open === i.id ? "" : i.id)}>
         <span><b>{i.number ?? "Brouillon"}</b><div className="muted" style={{ fontSize: 12 }}>{i.customer} · {day(i.issued_at ?? i.created_at)}</div></span>
-        <span style={{ textAlign: "right" }}><b>{n0(i.ttc_fcfa ?? i.total_fcfa)} FCFA</b><div className={"pill " + (i.status === "issued" ? "ok" : "")} style={{ fontSize: 12 }}>{STATUS[i.status]}</div></span>
+        <span style={{ textAlign: "right" }}><b>{n0(i.ttc_fcfa ?? i.total_fcfa)} FCFA</b>{(() => { const due = i.ttc_fcfa ?? i.total_fcfa; const got = paid[i.id] ?? 0;
+          if (i.status !== "issued") return <div className="pill" style={{ fontSize: 12 }}>{STATUS[i.status]}</div>;
+          if (got >= due) return <div style={{ fontSize: 14, fontWeight: 700, color: "var(--primary)" }}>Payée ✓</div>;
+          if (got > 0) return <div style={{ fontSize: 13, fontWeight: 600, color: "var(--pending)" }}>Payée en partie · reste {n0(due - got)}</div>;
+          return <div style={{ fontSize: 14, fontWeight: 600, color: "var(--error)" }}>À payer</div>; })()}</span>
       </div>
       {open === i.id && <div style={{ marginTop: 8 }}>
         {i.lines.map((l, k) => <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 13 }}><span>{l.label} · {n0(l.qty)} × {n0(l.unit_price)}</span><b>{n0(l.total)}</b></div>)}

@@ -6,7 +6,7 @@ import type { Ctx } from "./Chats";
 import { useCanMaintain } from "./useCan";
 import { invoicePdf } from "@/lib/invoicePdf";
 
-type SLine = { item_id?: string | null; label: string; unit?: string; qty: number; unit_price: number; total: number; delivered?: number };
+type SLine = { item_id?: string | null; label: string; unit?: string; qty: number; unit_price: number; total: number; delivered?: number; invoiced?: number };
 type SO = { id: string; customer: string; status: string; quote_number: string | null; order_number: string | null; lines: SLine[]; total_fcfa: number; valid_until: string | null; source_record_id: string | null; created_at: string };
 type Prod = { id: string; name: string; unit: string | null; price_fcfa: number | null };
 type Party = { id: string; name: string };
@@ -26,7 +26,7 @@ export default function Sales({ ctx }: { ctx: Ctx }) {
   const [invOf, setInvOf] = useState<Record<string, string>>({});
   const [biz, setBiz] = useState<{ logo: string | null; vat: number; niu: string | null }>({ logo: null, vat: 0, niu: null });
   const [form, setForm] = useState<null | { party: string; name: string; days: string; note: string; lines: { prod: string; label: string; qty: string; price: string; unit: string; item: string }[] }>(null);
-  const [dl, setDl] = useState<Record<string, string[]>>({});
+  const [dl, setDl] = useState<Record<string, string[]>>({}); const [bill, setBill] = useState<Record<string, string[] | undefined>>({});
   const [msg, setMsg] = useState(""); const [busy, setBusy] = useState("");
 
   const load = useCallback(async () => {
@@ -116,18 +116,25 @@ export default function Sales({ ctx }: { ctx: Ctx }) {
         <button onClick={() => setForm({ ...form, lines: [...form.lines, { prod: "", label: "", qty: "", price: "", unit: "", item: "" }] })}>+ Ligne</button>
         <button className="primary" disabled={busy === "new"} onClick={createQuote}>Créer le devis</button><button onClick={() => setForm(null)}>Annuler</button></div></div>}
     {live.length === 0 && !form && <div className="card"><h3>Ventes</h3><p className="muted">Aucun devis ni commande pour l'instant.</p></div>}
-    {orders.map((o) => { const rest = o.lines.map((l) => String(Math.max(0, l.qty - (l.delivered ?? 0)))); const d = dl[o.id] ?? rest; const invId = invOf[o.id]; return (
+    {orders.map((o) => { const rest = o.lines.map((l) => String(Math.max(0, l.qty - (l.delivered ?? 0)))); const d = dl[o.id] ?? rest; const invId = invOf[o.id]; const toBill = o.lines.map((l) => Math.max(0, Math.min(l.qty, l.delivered ?? 0) - (l.invoiced ?? 0))); const leftBill = o.lines.map((l) => Math.max(0, l.qty - (l.invoiced ?? 0))); const allBilled = leftBill.every((x) => x === 0); const b = bill[o.id]; return (
       <div className="card" key={o.id} style={o.status === "cancelled" ? { opacity: 0.6 } : undefined}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><b>{o.order_number ?? o.quote_number} · {o.customer}</b><span className="muted">{STATUS[o.status]}</span></div>
-        {o.lines.map((l, i) => <div key={i} className="muted" style={{ fontSize: 13 }}>{l.label} : {n0(l.qty)}{l.delivered ? ` (livré ${n0(l.delivered)})` : ""} × {n0(l.unit_price)}</div>)}
+        {o.lines.map((l, i) => <div key={i} className="muted" style={{ fontSize: 13 }}>{l.label} : {n0(l.qty)}{l.delivered ? ` · livré ${n0(l.delivered)}` : ""}{l.invoiced ? ` · facturé ${n0(l.invoiced)}` : ""} × {n0(l.unit_price)}</div>)}
         <div style={{ marginTop: 4 }}><b>{n0(o.total_fcfa)} FCFA</b> <span className="muted">· {day(o.created_at)}{o.status === "quote" && o.valid_until ? ` · valable jusqu'au ${day(o.valid_until)}` : ""}</span></div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
           <button style={{ minHeight: 36 }} onClick={() => pdf(o)}>PDF</button>
           {can && o.status === "quote" && <button className="primary" style={{ minHeight: 36 }} disabled={busy === o.id} onClick={() => act(o.id, () => supabase.rpc("confirm_order", { p_id: o.id }), "Devis accepté : c'est maintenant une commande.")}>Client d'accord</button>}
-          {can && ["confirmed", "partial", "delivered"].includes(o.status) && !invId && <button style={{ minHeight: 36 }} disabled={busy === o.id} onClick={() => act(o.id, () => supabase.rpc("invoice_from_order", { p_id: o.id }), "Facture créée : à émettre dans Documents.")}>Facturer</button>}
-          {invId && <span className="muted" style={{ alignSelf: "center", fontSize: 13 }}>Facturée (voir Documents)</span>}
+          {can && ["confirmed", "partial", "delivered"].includes(o.status) && !allBilled && !b && <button style={{ minHeight: 36 }} onClick={() => setBill({ ...bill, [o.id]: toBill.map(String) })}>{toBill.some((x) => x > 0) ? "Facturer ce qui est livré" : "Facturer"}</button>}
+          {invId && <span className="muted" style={{ alignSelf: "center", fontSize: 13 }}>{allBilled ? "Tout est facturé (voir Factures)" : "Facturée en partie (voir Factures)"}</span>}
           {can && ["quote", "confirmed"].includes(o.status) && <button style={{ minHeight: 36 }} disabled={busy === o.id} onClick={() => { if (window.confirm("Annuler ?")) act(o.id, () => supabase.rpc("cancel_order", { p_id: o.id }), "Annulée."); }}>Annuler</button>}
         </div>
+        {can && b && <div style={{ marginTop: 10, borderTop: "1px solid var(--line)", paddingTop: 8 }}>
+          <div className="muted" style={{ fontSize: 13, marginBottom: 4 }}>Quantités à mettre sur cette facture (proposé : livré et pas encore facturé)</div>
+          {o.lines.map((l, i) => <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}><span style={{ flex: 1 }}>{l.label}<span className="muted" style={{ fontSize: 12 }}> · reste {n0(leftBill[i])}</span></span>
+            <input inputMode="decimal" style={{ width: 90 }} value={b[i]} onChange={(e) => setBill({ ...bill, [o.id]: b.map((x, j) => j === i ? e.target.value : x) })} /></div>)}
+          <div className="muted" style={{ fontSize: 14, margin: "4px 0 8px" }}>Montant : <b style={{ color: "var(--text)" }}>{n0(o.lines.reduce((t, l, i) => t + (num(b[i]) || 0) * l.unit_price, 0))} FCFA</b>{biz.vat ? " HT" : ""}</div>
+          <div style={{ display: "flex", gap: 8 }}><button className="primary" style={{ minHeight: 44, flex: 1 }} disabled={busy === o.id || b.every((x) => !num(x))} onClick={() => act(o.id, () => supabase.rpc("invoice_order_part", { p_id: o.id, p_qty: b.map((q, index) => ({ index, qty: num(q) || 0 })), p_inv: crypto.randomUUID() }), "Facture créée : à émettre dans Factures.").then(() => setBill({ ...bill, [o.id]: undefined }))}>Créer la facture</button>
+            <button style={{ minHeight: 44 }} onClick={() => setBill({ ...bill, [o.id]: undefined })}>Annuler</button></div></div>}
         {can && (o.status === "confirmed" || o.status === "partial") && <div style={{ marginTop: 10, borderTop: "1px solid var(--line)", paddingTop: 8 }}>
           <div className="muted" style={{ fontSize: 13, marginBottom: 4 }}>Quantités livrées maintenant (le stock baisse)</div>
           {o.lines.map((l, i) => <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}><span style={{ flex: 1 }}>{l.label}</span>

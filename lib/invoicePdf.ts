@@ -1,6 +1,6 @@
 // Invoice as a PDF file (P-020). jsPDF is loaded only when someone taps the button, so phones that never use it do not download it.
 export type PdfLine = { label: string; qty: number; unit_price: number; total: number };
-export type PdfInvoice = { number: string | null; customer: string; lines: PdfLine[]; total_fcfa: number; vat_rate: number; vat_fcfa: number; ttc_fcfa: number | null; seller_niu: string | null; customer_niu: string | null; status: string; date: string; title?: string; validUntil?: string };
+export type PdfInvoice = { number: string | null; customer: string; lines: PdfLine[]; total_fcfa: number; vat_rate: number; vat_fcfa: number; ttc_fcfa: number | null; seller_niu: string | null; customer_niu: string | null; status: string; date: string; title?: string; validUntil?: string; paid?: number };
 
 // Plain spaces between thousands: the PDF's built-in font cannot draw the narrow space that toLocaleString uses.
 const money = (v: number) => String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
@@ -41,6 +41,9 @@ export async function invoicePdf(i: PdfInvoice, business: string, logo?: string 
   const row = (k: string, v: string, bold = false) => { doc.setFont("helvetica", bold ? "bold" : "normal"); doc.text(k, 130, y); doc.text(v, W - M - 2, y, { align: "right" }); y += 6; };
   if (i.vat_rate > 0) { row("Total HT", `${money(i.total_fcfa)} FCFA`); row(`TVA ${String(i.vat_rate).replace(".", ",")} %`, `${money(i.vat_fcfa)} FCFA`); }
   doc.setFontSize(12); row(i.vat_rate > 0 ? "Total TTC" : "Total", `${money(i.ttc_fcfa ?? i.total_fcfa)} FCFA`, true);
+  const due = i.ttc_fcfa ?? i.total_fcfa; const paid = Math.max(0, i.paid ?? 0);
+  if (i.status === "issued" && paid > 0 && paid < due) { doc.setFontSize(11); row("Déjà payé", `${money(paid)} FCFA`); row("Reste à payer", `${money(due - paid)} FCFA`, true); }
+  if (i.status === "issued" && paid >= due && due > 0) { doc.setTextColor(30, 130, 80); doc.setFontSize(40); doc.text("PAYÉE", W / 2, 150, { align: "center", angle: 30 }); doc.setTextColor(32, 41, 35); }
   if (i.status === "void") { doc.setTextColor(199, 71, 71); doc.setFontSize(40); doc.text("ANNULÉE", W / 2, 150, { align: "center", angle: 30 }); }
   if (i.status === "draft") { doc.setTextColor(150, 150, 150); doc.setFontSize(40); doc.text("BROUILLON", W / 2, 150, { align: "center", angle: 30 }); }
   const name = `${(i.title ?? "Facture").charAt(0) + (i.title ?? "Facture").slice(1).toLowerCase()}-${(i.number ?? "brouillon").replace(/[^\w-]+/g, "_")}.pdf`;
