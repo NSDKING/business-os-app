@@ -4,6 +4,7 @@ import { supabase, type Channel, type Draft, type Message } from "@/lib/supabase
 import { enqueue, flushQueue, readQueue } from "@/lib/queue";
 import { flushActions, readActions, readConflicts, wipeLocalCopy, type Conflict } from "@/lib/offline";
 import ConflictDrafts from "@/components/ConflictDrafts";
+import WorkerHome from "@/components/WorkerHome";
 import ReviewCard from "@/components/ReviewCard";
 import Approvers from "@/components/Approvers";
 import Compliance from "@/components/Compliance";
@@ -41,6 +42,7 @@ export default function Home() {
   const [pendingN, setPendingN] = useState(0); const [conflicts, setConflicts] = useState<Conflict[]>([]);
   const [full, setFull] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [worker, setWorker] = useState<boolean | null>(null); const [home, setHome] = useState(true);
 
   useEffect(() => {
     (async () => {
@@ -59,7 +61,10 @@ export default function Home() {
       if (me?.length) {
         const { data: g } = await supabase.from("role_grant").select("id").eq("member_id", me[0].id).eq("permission", "appoint").is("revoked_at", null).limit(1);
         setIsAdmin(!!g?.length);
-      }
+        const { data: mg } = await supabase.from("role_grant").select("id").eq("member_id", me[0].id).in("permission", ["approve", "appoint"]).is("revoked_at", null).limit(1);
+        let preview = false; try { preview = new URLSearchParams(location.search).get("vue") === "employe"; } catch {}
+        setWorker(preview || !mg?.length);
+      } else setWorker(true);
     })();
   }, []);
 
@@ -81,8 +86,22 @@ export default function Home() {
         <p className="muted">Ouvrez le lien d'invitation que le propriétaire vous a envoyé sur WhatsApp.</p></div></div></div>);
 
   const TABS: { t: Tab; label: string; icon: "chat" | "clipboard" | "doc" | "briefcase" | "chart" }[] = [
-    { t: "messages", label: "Messages", icon: "chat" }, { t: "drafts", label: "Drafts", icon: "clipboard" }, { t: "documents", label: "Documents", icon: "doc" },
-    { t: "business", label: "Business", icon: "briefcase" }, { t: "insights", label: "Insights", icon: "chart" }];
+    { t: "messages", label: "Messages", icon: "chat" }, { t: "drafts", label: "À vérifier", icon: "clipboard" }, { t: "documents", label: "Factures", icon: "doc" },
+    { t: "business", label: "Entreprise", icon: "briefcase" }, { t: "insights", label: "Chiffres", icon: "chart" }];
+  if (worker === null) return <div className="shell"><div className="body muted">Chargement…</div></div>;
+  if (worker) {
+    const back = <button className="big" style={{ margin: "8px 12px 0", minHeight: 52, fontSize: 18, display: "flex", alignItems: "center", gap: 8 }} onClick={() => { setHome(true); setFull(false); }}><Icon name="back" size={24} />Accueil</button>;
+    return (<div className="shell"><div className="main">
+      {!online && <div className="offline">Pas de réseau · vos envois partiront tout seuls dès que le réseau revient{pendingN ? ` (${pendingN} en attente)` : ""}</div>}
+      {online && pendingN > 0 && <div className="offline">Envoi en cours… ({pendingN})</div>}
+      {home && <div style={{ padding: "8px 12px 0" }}><ConflictDrafts /></div>}
+      {home ? <WorkerHome ctx={ctx} online={online} onMessages={() => { setHome(false); setTab("messages"); }} onSettings={() => { setHome(false); setTab("settings"); }} /> : <>
+        {back}
+        {tab === "messages" && <MessagesArea ctx={ctx} online={online} isAdmin={isAdmin} onQueue={() => setPendingN(readQueue().length)} onFull={setFull} full={full} gear={null} />}
+        {tab === "settings" && <Settings ctx={ctx} />}
+</>}
+    </div></div>);
+  }
   const hideBar = tab === "messages" && full;
   const gear = <button className="iconbtn" aria-label="Réglages" onClick={() => setTab("settings")}><Icon name="sliders" size={22} /></button>;
   return (
@@ -94,7 +113,7 @@ export default function Home() {
       {conflicts.length > 0 && <div className="card" style={{ margin: "8px 12px", borderLeft: "4px solid var(--pending)" }}>
         <b>Une action faite hors ligne n'a pas pu être appliquée</b>
         {conflicts.map((c) => <div key={c.id} className="muted" style={{ fontSize: 13 }}>{c.name} · {new Date(c.at).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })} : {c.reason}. </div>)}
-        <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>Détails et choix (refaire ou abandonner) dans l'onglet Drafts.</div></div>}
+        <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>Détails et choix (refaire ou abandonner) dans l'onglet À vérifier.</div></div>}
       {tab === "messages" && <MessagesArea ctx={ctx} online={online} isAdmin={isAdmin} onQueue={() => setPendingN(readQueue().length)} onFull={setFull} full={full} gear={gear} />}
       {tab === "drafts" && <Reports ctx={ctx} />}
       {tab === "documents" && <Invoices ctx={ctx} />}
