@@ -21,9 +21,12 @@ export default function Stock({ ctx }: { ctx: Ctx }) {
   const [adding, setAdding] = useState(false); const [nw, setNw] = useState({ name: "", unit: "unité", kind: "supply", reorder: "" });
   const [msg, setMsg] = useState(""); const [busy, setBusy] = useState(false);
 
+  const [sugg, setSugg] = useState<{ id: string; item_name: string; qty: number; reason: string; note: string | null }[]>([]);
   const load = useCallback(async () => {
     const { data } = await supabase.rpc("stock_levels", { p_business: ctx.business_id });
     setLevels((data as Level[]) ?? []);
+    const { data: sg } = await supabase.from("stock_suggestion").select("id,item_name,qty,reason,note").eq("business_id", ctx.business_id).eq("status", "pending").order("created_at", { ascending: false }).limit(30);
+    setSugg((sg as typeof sugg) ?? []);
   }, [ctx.business_id]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
@@ -49,6 +52,13 @@ export default function Stock({ ctx }: { ctx: Ctx }) {
   if (levels === null) return <div className="body muted">Chargement…</div>;
   const groups = [...new Set(levels.map((l) => l.kind))];
   return (<div className="body">
+    {can && sugg.length > 0 && <div className="card"><h3 style={{ marginBottom: 2 }}>À confirmer ({sugg.length})</h3>
+      <div className="muted" style={{ fontSize: 13, marginBottom: 6 }}>Tirés des fiches et rapports approuvés. Le stock ne bouge que si vous acceptez.</div>
+      {sugg.map((g) => <div key={g.id} style={{ borderTop: "1px solid var(--line)", padding: "8px 0" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><b>{g.item_name}</b><b style={{ color: g.qty < 0 ? "var(--error)" : undefined }}>{g.qty > 0 ? "+" : ""}{Math.round(g.qty).toLocaleString("fr-FR")}</b></div>
+        <div className="muted" style={{ fontSize: 13 }}>{g.note}</div>
+        <div style={{ display: "flex", gap: 8, marginTop: 6 }}><button className="primary" style={{ minHeight: 44, flex: 1 }} disabled={busy} onClick={() => act(() => supabase.rpc("apply_stock_suggestion", { p_id: g.id }), "Stock mis à jour.")}>Accepter</button>
+          <button style={{ minHeight: 44 }} disabled={busy} onClick={() => act(() => supabase.rpc("dismiss_stock_suggestion", { p_id: g.id }), "Suggestion refusée.")}>Refuser</button></div></div>)}</div>}
     {msg && <div className="card" style={{ color: msg.startsWith("Impossible") ? "var(--error)" : undefined }}>{msg}</div>}
     {levels.length === 0 && <div className="card"><h3>Stock</h3><p className="muted">Aucun article pour l'instant.</p>
       {can && <button className="primary big" disabled={busy} onClick={() => act(() => supabase.rpc("seed_stock_items", { p_business: ctx.business_id }), "Articles ajoutés.")}>Ajouter les articles habituels</button>}</div>}
