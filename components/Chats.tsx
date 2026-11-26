@@ -109,7 +109,7 @@ export default function Chats({ ctx, online, isAdmin, onQueue, onFull, jump, sim
       <button onClick={() => go({ s: "new" })} aria-label="Nouvelle discussion" style={{ border: 0, background: "none", minWidth: 44, color: "var(--text)", display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name="edit" size={27} /></button></div>
     <SearchBox value={q} onChange={setQ} placeholder="Rechercher une personne ou un groupe" />
     {!simple && <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "2px 16px 12px" }}>
-      {([["all", "Tout"], ["unread", "Non lus"], ["groups", "Groupes"], ["tagged", "Étiquetés"], ["saved", "Enregistrés"], ["tasks", "Tâches"], ["search", "Recherche"]] as const).map(([k, l]) =>
+      {([["all", "Tout"], ["unread", "Non lus"], ["groups", "Groupes"]] as const).map(([k, l]) =>
         <button key={k} style={chipStyle(tab === k)} onClick={() => setTab(k)}>{l}</button>)}
     </div>}
     {!simple && !["tagged", "saved", "tasks", "search"].includes(tab) && (() => {

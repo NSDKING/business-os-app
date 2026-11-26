@@ -133,7 +133,6 @@ export default function Home() {
         {TABS.map(({ t, label, icon }) => (
           <button key={t} className={tab === t ? "on" : ""} onClick={() => { setTab(t); setJump(null); }}><Icon name={icon} size={22} />{label}</button>))}
         <div className="grow" />
-        <button className="deskonly" onClick={() => setSearching(true)}><Icon name="search" size={22} />Rechercher</button>
         <button className={tab === "settings" ? "on" : ""} onClick={() => setTab("settings")}><Icon name="sliders" size={22} />Réglages</button>
       </div>
     </div>
